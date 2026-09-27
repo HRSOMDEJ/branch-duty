@@ -1,4 +1,4 @@
-var BD_VERSION = '1.2569', BD_BUILD = '2569-09-28.1', BD_BUILD_TH = '28 ก.ย. 2569';
+var BD_VERSION = '1.2569', BD_BUILD = '2569-09-28.3', BD_BUILD_TH = '28 ก.ย. 2569';
 /* BRAND (ชื่อระบบ โลโก้ สี ประกาศ): อ่านค่าที่แคชไว้ในเครื่องก่อน แล้วขอค่าล่าสุดจาก backend ตอนเริ่มแอป (ดู init ใน help.js) */
 var BRAND = (function(){ try { return JSON.parse(localStorage.getItem('bd_brand') || 'null'); } catch (e) { return null; } })();
 /* ================= แกนหลัก ================= */
@@ -64,7 +64,7 @@ function applyBrand(b){
   var lg = BRAND.logoTrim || BRAND.logo;
   $$('.brand-logo').forEach(function(el){ el.innerHTML = lg ? '<img src="' + lg + '" alt="โลโก้">' : '<i class="bi bi-hospital"></i>'; el.classList.toggle('has-img', !!lg); });
   try { if (BRAND && BRAND.version) store('bd_brand', JSON.stringify(BRAND)); } catch (e) { }
-  $$('.brand-short').forEach(function(el){ el.textContent = BRAND.short || 'เวรสาขา'; });
+  $$('.brand-short').forEach(function(el){ el.textContent = BRAND.short || 'ระบบจัดการเวร'; });
   $$('.brand-org').forEach(function(el){ el.textContent = BRAND.org || ''; });
   var f = footerHtml();
   if ($('footLogin')) $('footLogin').innerHTML = f;
@@ -445,7 +445,7 @@ function isCentral(){ return has('CENTRAL'); }
 var MENU = [
   { sec: 'งานของฉัน' },
   { id: 'my', icon: 'person-badge', text: 'เวรและค่าตอบแทนของฉัน', show: function(){ return true; } },
-  { id: 'booking', icon: 'calendar2-plus', text: 'จองเวร', show: function(){ return true; } },
+  { id: 'booking', icon: 'calendar2-plus', text: 'ลงบันทึกตารางเวร', show: function(){ return true; } },
   { id: 'schedule', icon: 'table', text: 'ตารางเวรรวม', show: function(){ return true; } },
   { sec: 'งานศูนย์', show: function(){ return has('BRANCH'); } },
   { id: 'branch', icon: 'hospital', text: 'แดชบอร์ดศูนย์', show: function(){ return has('BRANCH') && !isCentral(); } },
@@ -459,7 +459,7 @@ var MENU = [
   { id: 'track', icon: 'send-check', text: 'ติดตามการส่งเบิก', show: function(){ return isCentral(); } },
   { sec: 'การตั้งค่า', show: function(){ return isCentral(); } },
   { id: 'setup', icon: 'diagram-3', text: 'ศูนย์ ตำแหน่ง และอัตรา', show: function(){ return isCentral(); } },
-  { id: 'calendar', icon: 'calendar3-week', text: 'ปฏิทิน กรอบเวร ช่วงจอง', show: function(){ return isCentral(); } },
+  { id: 'calendar', icon: 'calendar3-week', text: 'ปฏิทิน กรอบเวร ช่วงลงตารางเวร', show: function(){ return isCentral(); } },
   { id: 'signers', icon: 'pen', text: 'ผู้ลงนามในเอกสาร', show: function(){ return isCentral(); } },
   { id: 'employees', icon: 'people', text: 'ข้อมูลบุคลากร', show: function(){ return has('BRANCH'); } },
   { id: 'users', icon: 'shield-lock', text: 'ผู้ใช้งานและสิทธิ์', show: function(){ return has('ADMIN'); } },
@@ -496,7 +496,7 @@ function go(page){
   S.page = page; store('bd_page', page);
   var mm = MENU.filter(function(m){ return m.id === page; })[0];
   if ($('topTitle')) $('topTitle').textContent = mm ? mm.text : '';
-  document.title = (mm ? mm.text + ' · ' : '') + ((BRAND && BRAND.short) || 'เวรสาขา');
+  document.title = (mm ? mm.text + ' · ' : '') + ((BRAND && BRAND.short) || 'ระบบจัดการเวร') + ' ศ.สาขาฯ';
   $$('[data-p]').forEach(function(a){ a.classList.toggle('active', a.dataset.p === page); });
   $('actionbar').classList.remove('show');
   window.scrollTo(0, 0);
@@ -546,7 +546,7 @@ function statusPill(st, lg){
 }
 /** สถานะช่วงลงตารางเวร (สีชัด อ่านง่าย) */
 function windowPill(state){
-  var m = { OPEN: ['p-ok', 'unlock-fill', 'เปิดจองเวร'], CLOSED: ['p-closed', 'lock-fill', 'ปิดจองเวรแล้ว'], BEFORE: ['p-warn', 'clock-fill', 'ยังไม่ถึงช่วงเปิดจอง'] }[state] || ['p-mute', 'dot', state];
+  var m = { OPEN: ['p-ok', 'unlock-fill', 'เปิดลงตารางเวร'], CLOSED: ['p-closed', 'lock-fill', 'ปิดลงตารางเวรแล้ว'], BEFORE: ['p-warn', 'clock-fill', 'ยังไม่ถึงช่วงเปิดลงตารางเวร'] }[state] || ['p-mute', 'dot', state];
   return '<span class="pill pill-lg ' + m[0] + ' nodot"><i class="bi bi-' + m[1] + '"></i> ' + m[2] + '</span>';
 }
 function scanPill(s){
@@ -559,7 +559,7 @@ function scanPill(s){
 function recCls(st){ return st === 'X' ? 'rc-bad' : st === 'R' ? 'rc-ok' : st === 'N' ? 'rc-miss' : ''; }
 function recTitle(st){ return st === 'X' ? 'มีรายการต้องแก้ไข' : st === 'R' ? 'ยืนยันการปฏิบัติงานแล้ว' : st === 'N' ? 'ถึงวันแล้ว ยังไม่ยืนยันการปฏิบัติงาน' : 'ยังไม่ถึงวัน'; }
 function recLegend(){
-  return '<div class="rc-legend"><span class="rc-t">สถานะในช่อง:</span>' + [['', 'ยังไม่ถึงวัน'], ['rc-miss', 'รอยืนยันการปฏิบัติงาน'], ['rc-ok', 'ยืนยันแล้ว'], ['rc-bad', 'ต้องแก้ไข'], ['sg-pend', 'จองเอง รอศูนย์ยืนยัน']].map(function(x){ return '<span><i class="rc-sw ' + x[0] + '"></i>' + x[1] + '</span>'; }).join('') + '</div>';
+  return '<div class="rc-legend"><span class="rc-t">สถานะในช่อง:</span>' + [['', 'ยังไม่ถึงวัน'], ['rc-miss', 'รอยืนยันการปฏิบัติงาน'], ['rc-ok', 'ยืนยันแล้ว'], ['rc-bad', 'ต้องแก้ไข'], ['sg-pend', 'ลงเอง รอศูนย์ยืนยัน']].map(function(x){ return '<span><i class="rc-sw ' + x[0] + '"></i>' + x[1] + '</span>'; }).join('') + '</div>';
 }
 /** คลาสสีประเภทวัน */
 function dk(color){ return color && color !== 'WORK' ? 'dk-' + color : ''; }

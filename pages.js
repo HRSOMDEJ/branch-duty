@@ -1,5 +1,5 @@
 /* =====================================================================
-   เวรสาขา — หน้าของบุคลากร และงานศูนย์
+   ระบบจัดการเวร ศ.สาขาฯ — หน้าของบุคลากร และงานศูนย์
    my · booking · schedule · branch · plan · entry · followup
    ===================================================================== */
 var PAGES = {};
@@ -37,7 +37,7 @@ function viewAttach(id, onDeleted){
 PAGES.my = function(){
   var ym = S.ym || S.boot.ym;
   mount(pageHead('งานของฉัน', 'สวัสดี ' + esc(S.boot.me.name.split(' ').slice(1, 2).join(' ') || S.boot.me.name), 'เวร ชั่วโมง และค่าตอบแทนของท่านทุกศูนย์ ข้อมูลส่วนตัวเห็นเฉพาะท่านเท่านั้น',
-    '<button class="btn btn-brand" onclick="go(\'booking\')"><i class="bi bi-calendar2-plus"></i> จองเวร</button>') +
+    '<button class="btn btn-brand" onclick="go(\'booking\')"><i class="bi bi-calendar2-plus"></i> ลงบันทึกตารางเวร</button>') +
     '<div class="filters">' + ymSelect('myYm', ym, 12, 1) + '</div><div id="myBody">' + skeleton(6) + '</div>');
   $('myYm').onchange = function(){ S.ym = this.value; loadMy(); };
   loadMy();
@@ -53,7 +53,7 @@ function drawMy(r){
   var h = '<div class="hero-my">' +
     '<div class="hy-main"><div class="hy-l">ค่าตอบแทนที่ยืนยันแล้ว · ' + esc(thYm(r.ym)) + '</div><div class="hy-v"><span data-v="' + (t.amount + t.mealAmount) + '" class="cu">' + money(t.amount + t.mealAmount) + '</span> <small>บาท</small></div>' +
     '<div class="hy-s">ตามตารางทั้งเดือน ประมาณ <b>' + money(t.plannedAmount + t.mealAmount) + '</b> บาท · ค่าชั่วโมง ' + money(t.amount) + ' + ค่าอาหาร ' + money(t.mealAmount) + '</div></div>' +
-    '<div class="hy-next">' + (next ? '<div class="hy-l">เวรถัดไป</div><div class="hy-nd">' + esc(dateTh(next.date)) + '</div><div>' + brChip(next.branchId) + ' ' + esc(posShort(next.posName)) + ' · ' + slotTag(next.slot) + ' ' + esc(next.timeIn + '–' + next.timeOut) + '</div>' : '<div class="hy-l">เวรถัดไป</div><div class="hy-nd">ยังไม่มีเวร</div><a href="#" onclick="go(\'booking\');return false" class="hy-a">จองเวรเลย →</a>') + '</div></div>';
+    '<div class="hy-next">' + (next ? '<div class="hy-l">เวรถัดไป</div><div class="hy-nd">' + esc(dateTh(next.date)) + '</div><div>' + brChip(next.branchId) + ' ' + esc(posShort(next.posName)) + ' · ' + slotTag(next.slot) + ' ' + esc(next.timeIn + '–' + next.timeOut) + '</div>' : '<div class="hy-l">เวรถัดไป</div><div class="hy-nd">ยังไม่มีเวร</div><a href="#" onclick="go(\'booking\');return false" class="hy-a">ลงบันทึกตารางเวรเลย →</a>') + '</div></div>';
   h += '<div class="kpis">' + kpi('calendar-check', 'ic-brand', 'เวรในเดือนนี้', t.duties) + kpi('clock-history', 'ic-ok', 'ชั่วโมงที่ยืนยันแล้ว (จากตาราง ' + hrs(t.planned) + ')', t.hours, 1) +
     kpi('cup-hot', 'ic-warn', 'วันที่ได้ค่าอาหาร', t.meal) + kpi('exclamation-octagon', t.red ? 'ic-bad' : 'ic-mute', 'รายการต้องแก้ไข', t.red) + '</div>';
   var brs = Object.keys(t.byBranch);
@@ -82,18 +82,18 @@ function drawMy(r){
   animateKpis();
 }
 function myCancel(id){
-  confirmBox('ยกเลิกเวรที่จองไว้', 'ยกเลิกเวรนี้? (ยกเลิกเองได้เฉพาะเวรที่ศูนย์ยังไม่ยืนยัน ในช่วงเปิดจอง)', 'ยกเลิกเวร', true).then(function(ok){
+  confirmBox('ยกเลิกเวรที่ลงไว้', 'ยกเลิกเวรนี้? (ยกเลิกเองได้เฉพาะเวรที่ศูนย์ยังไม่ยืนยัน ในช่วงเปิดลงตารางเวร)', 'ยกเลิกเวร', true).then(function(ok){
     if (ok) api('cancelBooking', { id: id }).then(function(){ notify('ยกเลิกเวรแล้ว'); loadMy(); }).catch(function(){});
   });
 }
 
-/* ================= จองเวร ================= */
+/* ================= ลงบันทึกตารางเวร ================= */
 var BK = null;
 PAGES.booking = function(){
   var ym = S.bkYm || addYm(S.boot.ym, S.boot.today.slice(8) >= '10' ? 1 : 0);
   var brs = S.boot.branches.map(function(b){ return b.id; });
   var br = S.bkBr || (S.boot.me.branches && S.boot.me.branches[0] && brs.indexOf(S.boot.me.branches[0]) >= 0 ? S.boot.me.branches[0] : curBr());
-  mount(pageHead('งานของฉัน', 'จองเวร', 'แตะช่วงเวรที่ยังว่างเพื่อจอง · เวรที่จองเองจะ "รอศูนย์ยืนยัน" · ยกเลิกเองได้ในช่วงเปิดจอง') +
+  mount(pageHead('งานของฉัน', 'ลงบันทึกตารางเวร', 'แตะช่วงเวรที่ยังว่างเพื่อลงตารางเวร · เวรที่ลงเองจะ "รอศูนย์ยืนยัน" · ยกเลิกเองได้ในช่วงเปิดลงตารางเวร') +
     '<div class="filters">' + ymSelect('bkYm', ym, 2, 2) + '<div class="flex-grow-1"><label class="form-label">ศูนย์</label>' + brTabs('bkBr', brs, br) + '</div><div id="bkPosW"></div></div>' +
     '<div id="bkHead"></div><div id="bkBody">' + skeleton(8) + '</div>');
   $('bkYm').onchange = function(){ S.bkYm = this.value; loadBooking(); };
@@ -117,7 +117,7 @@ function drawBooking(b){
   enhanceSelects($('bkPosW'));
   if ($('bkPos')) $('bkPos').onchange = function(){ S.bkPos = this.value; drawBooking(BK); };
   var w = b.window;
-  $('bkHead').innerHTML = '<div class="wbanner ' + (b.windowState === 'OPEN' ? 'wb-ok' : '') + '">' + windowPill(b.windowState) + '<span>ช่วงจองเวรเดือน ' + esc(thYm(b.ym)) + ' : <b>' + esc(thDateFull(w.openFrom)) + ' – ' + esc(thDateFull(w.openTo)) + '</b></span>' +
+  $('bkHead').innerHTML = '<div class="wbanner ' + (b.windowState === 'OPEN' ? 'wb-ok' : '') + '">' + windowPill(b.windowState) + '<span>ช่วงลงตารางเวรเดือน ' + esc(thYm(b.ym)) + ' : <b>' + esc(thDateFull(w.openFrom)) + ' – ' + esc(thDateFull(w.openTo)) + '</b></span>' +
     (b.status !== 'OPEN' ? statusPill(b.status) : '') + (b.manage ? '<span class="pill p-violet nodot"><i class="bi bi-person-gear"></i> ท่านเป็นผู้ดูแลศูนย์นี้ · ลงเวรแทนผู้อื่นได้</span>' : '') + '</div>';
   if (!pos.length) { $('bkBody').innerHTML = '<div class="card">' + empty('person-x', 'ศูนย์นี้ไม่มีตำแหน่งที่ตรงกับงานของท่าน หากต้องการขึ้นเวร กรุณาติดต่อผู้ดูแลศูนย์') + '</div>'; return; }
   var P = pos.filter(function(p){ return p.id === S.bkPos; })[0];
@@ -139,7 +139,7 @@ function drawBooking(b){
     h += '</div>';
   });
   h += '</div></div></div><div class="card bk-mine"><div class="card-h"><h3><i class="bi bi-person-badge"></i> เวรของฉันเดือนนี้</h3><span class="sub">' + b.mine.length + ' เวร</span></div><div class="card-b">' +
-    (b.mine.length ? b.mine.map(function(m){ return '<div class="bm" style="--bc:' + esc(brOf(m.branchId).color) + '"><b>' + esc(dateTh(m.date)) + '</b><span>' + brChip(m.branchId) + ' ' + esc(posShort(posName(m.positionId))) + ' ' + slotTag(m.slot) + ' ' + esc(m.times) + '</span>' + (m.pending ? '<span class="pill p-warn">รอศูนย์ยืนยัน</span>' : m.worked ? '<span class="pill p-ok">ปฏิบัติงานแล้ว</span>' : '<span class="pill p-info">ยืนยันแล้ว</span>') + '</div>'; }).join('') : empty('calendar-heart', 'ยังไม่มีเวร แตะช่องที่ยังว่างในปฏิทินเพื่อจอง')) +
+    (b.mine.length ? b.mine.map(function(m){ return '<div class="bm" style="--bc:' + esc(brOf(m.branchId).color) + '"><b>' + esc(dateTh(m.date)) + '</b><span>' + brChip(m.branchId) + ' ' + esc(posShort(posName(m.positionId))) + ' ' + slotTag(m.slot) + ' ' + esc(m.times) + '</span>' + (m.pending ? '<span class="pill p-warn">รอศูนย์ยืนยัน</span>' : m.worked ? '<span class="pill p-ok">ปฏิบัติงานแล้ว</span>' : '<span class="pill p-info">ยืนยันแล้ว</span>') + '</div>'; }).join('') : empty('calendar-heart', 'ยังไม่มีเวร แตะช่องที่ยังว่างในปฏิทินเพื่อลงตารางเวร')) +
     '</div></div></div>';
   $('bkBody').innerHTML = h;
   $$('#bkBody .bslot').forEach(function(el){ el.onclick = function(){ openSlot(el.dataset.k); }; });
@@ -156,8 +156,8 @@ function openSlot(k){
     if (mine && mine.pending) btns.push({ text: '<i class="bi bi-x-lg"></i> ยกเลิกเวรของฉัน', cls: 'btn-danger-soft', onClick: function(){ api('cancelBooking', { id: mine.id }).then(function(){ notify('ยกเลิกเวรแล้ว'); loadBooking(); }).catch(function(){}); } });
     if (b.manage && c.n < c.q) btns.push({ text: '<i class="bi bi-person-plus"></i> ลงเวรแทน', cls: 'btn-soft', onClick: function(){ var t = $('slTime') ? $('slTime').value : times[0];
       setTimeout(function(){ pickPerson('ลงเวรแทน · ' + dateTh(date), P.jobId).then(function(pp){ if (pp) api('book', { positionId: P.id, date: date, slot: s, times: t, empCode: pp.c }, { block: 'กำลังลงเวร…' }).then(function(){ notify('ลงเวร ' + pp.n + ' แล้ว'); loadBooking(); }).catch(function(){}); }); }, 300); } });
-    if (!mine && c.n < c.q && (S.boot.myJobs || []).indexOf(P.jobId) >= 0) btns.push({ text: '<i class="bi bi-calendar2-check"></i> จองเวรนี้', cls: 'btn-brand', onClick: function(){ var t = $('slTime') ? $('slTime').value : times[0];
-      api('book', { positionId: P.id, date: date, slot: s, times: t }, { block: 'กำลังจองเวร…' }).then(function(){ notify('จองเวรเรียบร้อย รอศูนย์ยืนยัน'); loadBooking(); }).catch(function(){}); } });
+    if (!mine && c.n < c.q && (S.boot.myJobs || []).indexOf(P.jobId) >= 0) btns.push({ text: '<i class="bi bi-calendar2-check"></i> ลงตารางเวรนี้', cls: 'btn-brand', onClick: function(){ var t = $('slTime') ? $('slTime').value : times[0];
+      api('book', { positionId: P.id, date: date, slot: s, times: t }, { block: 'กำลังลงตารางเวร…' }).then(function(){ notify('ลงตารางเวรเรียบร้อย รอศูนย์ยืนยัน'); loadBooking(); }).catch(function(){}); } });
   }
   modal('ช่วงเวร', body, btns);
 }
@@ -230,7 +230,7 @@ var PL = null;
 PAGES.plan = function(){
   var brs = myBrs(), br = curBr();
   var ym = S.plYm || addYm(S.boot.ym, S.boot.today.slice(8) >= '10' ? 1 : 0);
-  mount(pageHead('งานศูนย์', 'จัดตารางเวร', 'พิมพ์ตัวย่อในช่องแบบ Google Sheet · ยืนยันเวรที่บุคลากรจองเอง · พิมพ์ใบบันทึกเวลาที่มีชื่อตามตาราง',
+  mount(pageHead('งานศูนย์', 'จัดตารางเวร', 'พิมพ์ตัวย่อในช่องแบบ Google Sheet · ยืนยันเวรที่บุคลากรลงเอง · พิมพ์ใบบันทึกเวลาที่มีชื่อตามตาราง',
     '<button class="btn btn-ghost" onclick="plPrint(this)"><i class="bi bi-printer"></i> พิมพ์ใบบันทึกเวลา</button>') +
     '<div class="filters">' + ymSelect('plYm', ym, 3, 2) + (brs.length > 1 ? '<div class="flex-grow-1"><label class="form-label">ศูนย์</label>' + brTabs('plBr', brs, br) + '</div>' : '') + '</div>' +
     '<div id="plHead"></div>' + dayLegend() + recLegend() + '<div id="plBody" class="mt-2">' + skeleton(8) + '</div>');
@@ -244,7 +244,7 @@ PAGES.plan = function(){
 function loadPlan(){ api('getScheduleGrid', { ym: $('plYm').value, branchId: curBr() }).then(drawPlan).catch(function(){}); }
 function drawPlan(g){
   if (!$('plBody')) return;
-  $('plHead').innerHTML = (g.pendingCount ? '<div class="cta"><div class="cta-ic"><i class="bi bi-person-check"></i></div><div class="flex-grow-1"><b>มีเวรที่บุคลากรจองเอง รอยืนยัน ' + g.pendingCount + ' รายการ</b><div class="small-muted">ช่องที่มีเส้นประสีส้ม · ตรวจแล้วกดยืนยันทั้งตารางครั้งเดียว</div></div>' + (g.editable ? '<button class="btn btn-brand" onclick="plConfirm(this)"><i class="bi bi-check2-all"></i> ยืนยันเวรทั้งหมด</button>' : '') + '</div>' : '') +
+  $('plHead').innerHTML = (g.pendingCount ? '<div class="cta"><div class="cta-ic"><i class="bi bi-person-check"></i></div><div class="flex-grow-1"><b>มีเวรที่บุคลากรลงเอง รอยืนยัน ' + g.pendingCount + ' รายการ</b><div class="small-muted">ช่องที่มีเส้นประสีส้ม · ตรวจแล้วกดยืนยันทั้งตารางครั้งเดียว</div></div>' + (g.editable ? '<button class="btn btn-brand" onclick="plConfirm(this)"><i class="bi bi-check2-all"></i> ยืนยันเวรทั้งหมด</button>' : '') + '</div>' : '') +
     (!g.editable ? '<div class="wbanner">' + statusPill(g.status) + ' รอบเดือนนี้แก้ไขตารางไม่ได้ในสถานะปัจจุบัน</div>' : '');
   g.rows.forEach(function(r){ r.editable = g.editable; });
   PL = SheetGrid({ host: 'plBody', dates: g.dates, rows: g.rows, quota: g.quota, positions: g.positions, canAdd: g.editable,
@@ -316,7 +316,7 @@ function drawEntry(){
     '<div class="pv-tools">' + (d.editable && todo.length ? '<button class="btn btn-ok" id="enOkSheet"><i class="bi bi-check2-all"></i> ตรงตามใบ (' + todo.length + ')</button>' : '') + '</div><button class="pv-nav" id="pvNext" aria-label="ใบถัดไป"' + (EN.sheet < pages.length - 1 ? '' : ' disabled') + '><i class="bi bi-chevron-right"></i></button></div>';
   h += '<div class="paper-stage"><div class="paper" id="enPaper"><div class="paper-top"><span class="paper-form">FM-HRM-032/01</span><span class="paper-no">ใบที่ <b>' + k + '</b></span></div>' +
     '<div class="paper-t">แบบบันทึกเวลาการปฏิบัติงาน (' + esc(brOf(d.branchId).fullName || brName(d.branchId)) + ')</div><div class="paper-s">ประจำเดือน ' + esc(thYm(d.ym)) + ' · ตำแหน่ง ' + esc(posShort(P.name)) + '</div>' +
-    '<div class="tbl paper-tbl"><table class="table sheet-g"><thead><tr><th rowspan="2" class="sw-d">วันที่</th><th class="sw-s">' + esc(slotL('D').name) + ' ' + esc(P.day[0] || '') + '</th><th class="sw-s">' + esc(slotL('E').name) + ' ' + esc(P.eve.join(' / ') || '—') + '</th></tr></thead><tbody>';
+    '<div class="tbl paper-tbl"><table class="table sheet-g"><thead><tr><th rowspan="2" class="sw-d">วันที่</th><th class="sw-s">' + esc(slotL('D').name) + ' ' + esc(P.day.join(' / ') || '') + '</th><th class="sw-s">' + esc(slotL('E').name) + ' ' + esc(P.eve.join(' / ') || '—') + '</th></tr></thead><tbody>';
   d.dates.forEach(function(x, i){
     var q = P.quota[i] || { D: 0, E: 0 };
     h += '<tr class="' + dk(x.color) + '"><td class="sw-d"><b>' + x.d + '</b> <small>' + TH_D[x.dow] + '</small>' + (x.color !== 'WORK' && x.color !== 'WEEKEND' && x.note ? '<div class="sw-note">' + esc(x.note) + '</div>' : '') + '</td>' +
@@ -377,7 +377,7 @@ function openDuty(id){
     '<div class="dd-grid"><div><span>การปฏิบัติงาน</span>' + (x.workStatus === 'WORKED' ? '<span class="pill p-ok">ยืนยันแล้ว</span> <small class="small-muted">' + esc(x.confirmedBy || '') + '</small>' : x.workStatus === 'ABSENT' ? '<span class="pill p-mute">ไม่มา</span> ' + esc(x.note) : '<span class="pill p-slate">รอยืนยัน</span>') + '</div>' +
     '<div><span>สแกนนิ้ว</span>' + scanPill(x.scanStatus) + (x.scanIn ? ' <small>' + esc(x.scanIn) + (x.scanOut && x.scanOut !== x.scanIn ? ' – ' + esc(x.scanOut) : '') + '</small>' : '') + '</div>' +
     '<div><span>กลุ่มการจ่าย</span>' + (x.partTime ? 'จ่ายรายชั่วโมงทุกช่วง' : 'บุคลากรประจำศูนย์') + (x.payMode ? ' <span class="tag">กำหนดรายเวร</span>' : '') + '</div>' +
-    '<div><span>ที่มา</span>' + esc({ BOOK: 'จองเอง', BRANCH: 'ผู้ดูแลศูนย์', CENTRAL: 'เจ้าหน้าที่กลาง', IMPORT: 'นำเข้าจากระบบเดิม', LEGACY: 'ระบบเดิม' }[x.source] || x.source) + '</div></div>' +
+    '<div><span>ที่มา</span>' + esc({ BOOK: 'ลงเอง', BRANCH: 'ผู้ดูแลศูนย์', CENTRAL: 'เจ้าหน้าที่กลาง', IMPORT: 'นำเข้าจากระบบเดิม', LEGACY: 'ระบบเดิม' }[x.source] || x.source) + '</div></div>' +
     (x.flags.length ? '<div class="mt-2">' + flagChips(x.flags, 8) + '</div>' : '') +
     (x.attachIds.length ? '<div class="mt-2">' + x.attachIds.map(function(a, i){ return '<button class="btn btn-sm btn-ghost me-1" onclick="viewAttach(\'' + a + '\',' + (ed ? 'function(){loadEntry()}' : 'null') + ')"><i class="bi bi-paperclip"></i> ใบลืมสแกน ' + (i + 1) + '</button>'; }).join('') + '</div>' : '');
   if (ed) {

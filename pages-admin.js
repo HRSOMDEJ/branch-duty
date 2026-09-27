@@ -1,5 +1,5 @@
 /* =====================================================================
-   เวรสาขา — การตั้งค่า
+   ระบบจัดการเวร ศ.สาขาฯ — การตั้งค่า
    setup · calendar · signers · employees · users · settings · import · audit
    ===================================================================== */
 
@@ -54,7 +54,7 @@ function drawSetup(){
           '<td>' + (p.mealEligible === 'FALSE' ? '<span class="small-muted">ไม่มี</span>' : '<i class="bi bi-check2 text-success"></i>') + '</td>' +
           '<td class="text-nowrap"><button class="btn btn-sm btn-ghost" onclick="posModal(\'' + p.id + '\')" aria-label="แก้ไขตำแหน่ง"><i class="bi bi-pencil"></i></button> ' + (p.hourly ? '<button class="btn btn-sm btn-soft" onclick="rateModal(\'' + p.id + '\')"><i class="bi bi-cash-coin"></i> อัตรา</button>' : '') + '</td></tr>';
       }).join('') : '<tr><td colspan="8">' + empty('person-vcard', 'ยังไม่มีตำแหน่งในศูนย์นี้') + '</td></tr>') + '</tbody></table></div></div></div>' +
-      '<div class="small-muted mt-2">เวลามาตรฐานใส่ได้หลายค่า คั่นด้วย , · กรอบเวรรายวันปรับได้ที่หน้า "ปฏิทิน กรอบเวร ช่วงจอง"</div>';
+      '<div class="small-muted mt-2">เวลามาตรฐานใส่ได้หลายค่า คั่นด้วย , · กรอบเวรรายวันปรับได้ที่หน้า "ปฏิทิน กรอบเวร ช่วงลงตารางเวร"</div>';
   }
   $('suBody').innerHTML = h;
   if (t === 'pos') bindBrTabs('suBr', function(b){ S.suBr = b; drawSetup(); });
@@ -74,7 +74,7 @@ function brModal(id){
 function jobModal(id){
   var j = id ? SU.jobs.filter(function(x){ return x.id === id; })[0] : { hourly: 'TRUE', active: 'TRUE', sortOrder: 99 };
   modal(id ? 'แก้ไขงาน ' + j.name : 'เพิ่มงาน', '<div class="row g-2">' + fld('jmId', 'รหัส (อังกฤษ 2–4 ตัว)', j.id, { col: 'col-4', ro: !!id }) + fld('jmName', 'ชื่องาน', j.name, { col: 'col-8' }) + fld('jmShort', 'ชื่อย่อ', j.short, { col: 'col-6' }) + fld('jmSort', 'ลำดับ', j.sortOrder, { col: 'col-6', type: 'number' }) +
-    fld('jmAlias', 'ชื่อตำแหน่ง HR ที่เทียบได้ (คั่นด้วย ,)', j.aliases, { col: 'col-12', help: 'ใช้จับคู่อัตโนมัติว่าใครมีสิทธิ์จองเวรในงานนี้' }) +
+    fld('jmAlias', 'ชื่อตำแหน่ง HR ที่เทียบได้ (คั่นด้วย ,)', j.aliases, { col: 'col-12', help: 'ใช้จับคู่อัตโนมัติว่าใครมีสิทธิ์ลงบันทึกตารางเวรในงานนี้' }) +
     '<div class="col-6">' + sw('jmHourly', 'จ่ายค่าตอบแทนรายชั่วโมง', j.hourly !== 'FALSE') + '</div><div class="col-6">' + sw('jmAct', 'เปิดใช้งาน', j.active !== 'FALSE') + '</div></div>',
     [{ text: 'ยกเลิก', cls: 'btn-ghost' }, { text: '<i class="bi bi-save"></i> บันทึก', onClick: function(btn){
       api('saveJob', { id: $('jmId').value, name: $('jmName').value, short: $('jmShort').value, sortOrder: $('jmSort').value, aliases: $('jmAlias').value, hourly: $('jmHourly').checked, active: $('jmAct').checked }, { btn: btn }).then(function(d){ MDL.hide(); suAfter(d); }).catch(function(){});
@@ -87,7 +87,7 @@ function posModal(id){
     '<div class="col-6"><label class="form-label" for="pmBr">ศูนย์</label><select class="form-select" id="pmBr"' + (id ? ' disabled' : '') + '>' + SU.branches.map(function(b){ return '<option value="' + b.id + '"' + (b.id === p.branchId ? ' selected' : '') + '>' + esc(b.name) + '</option>'; }).join('') + '</select></div>' +
     '<div class="col-6"><label class="form-label" for="pmJob">งาน</label><select class="form-select" id="pmJob"' + (id ? ' disabled' : '') + '>' + jobs + '</select></div>' +
     fld('pmName', 'ชื่อตำแหน่ง (บนเอกสาร)', p.name, { col: 'col-12', ph: 'เว้นว่าง = ชื่องาน + ศ.ชื่อศูนย์' }) + fld('pmCode', 'รหัสรายได้ HRMi', p.incomeCode, { col: 'col-5', ph: 'R6xx-x' }) + fld('pmCodeN', 'ชื่อรายได้', p.incomeName, { col: 'col-7' }) +
-    fld('pmDay', 'เวลามาตรฐาน ' + esc(slotL('D').name), p.dayTimes, { col: 'col-12', ph: '08:00-16:00' }) + fld('pmEve', 'เวลามาตรฐาน ' + esc(slotL('E').name) + ' (หลายค่าคั่นด้วย ,)', p.eveTimes, { col: 'col-12', ph: '16:00-19:00,16:00-20:00' }) +
+    fld('pmDay', 'เวลามาตรฐาน ' + esc(slotL('D').name) + ' (หลายค่าคั่นด้วย , · ค่าแรก = เต็มวัน)', p.dayTimes, { col: 'col-12', ph: '08:00-16:00,08:00-14:00', help: 'เช่น ผู้ที่ต้องกลับไปต่อเวรที่ รพ. ใส่ 08:00-14:00 เพิ่ม · ในตารางเวรพิมพ์ ' + esc(slotL('D').s) + '2 = แบบที่ 2' }) + fld('pmEve', 'เวลามาตรฐาน ' + esc(slotL('E').name) + ' (หลายค่าคั่นด้วย ,)', p.eveTimes, { col: 'col-12', ph: '16:00-19:00,16:00-20:00' }) +
     '<div class="col-12"><label class="form-label">กรอบเวรตั้งต้น (คน/ช่วง)</label><div class="q-box">' + [['pmQwd', 'วันทำการ ' + slotL('D').s, p.qWorkD], ['pmQwe', 'วันทำการ ' + slotL('E').s, p.qWorkE], ['pmQhd', 'วันหยุด ' + slotL('D').s, p.qHolD], ['pmQhe', 'วันหยุด ' + slotL('E').s, p.qHolE]].map(function(x){
       return '<div><label for="' + x[0] + '">' + esc(x[1]) + '</label><input class="form-control text-center" type="number" min="0" max="20" id="' + x[0] + '" value="' + esc(x[2]) + '"></div>'; }).join('') + '</div></div>' +
     fld('pmAlias', 'ชื่อตำแหน่งในระบบเดิม (สำหรับนำเข้า คั่นด้วย ,)', p.aliases, { col: 'col-12' }) +
@@ -112,12 +112,12 @@ function saveSlotL(btn){
   api('saveSlotLabels', { labels: o }, { btn: btn }).then(function(L){ S.boot.labels = L; notify('บันทึกชื่อช่วงเวรแล้ว'); drawSetup(); }).catch(function(){});
 }
 
-/* ================= ปฏิทิน กรอบเวร ช่วงจอง ================= */
+/* ================= ปฏิทิน กรอบเวร ช่วงลงตารางเวร ================= */
 var CA = null;
 PAGES.calendar = function(){
   var ym = S.caYm || addYm(S.boot.ym, 1);
   S.caTab = S.caTab || 'day';
-  mount(pageHead('การตั้งค่า', 'ปฏิทิน กรอบเวร และช่วงจอง', 'กำหนดวันหยุดนักขัตฤกษ์ วันหยุดชดเชย วันปิดศูนย์ กรอบเวรรายวัน และช่วงเปิดจองเวร (เสาร์–อาทิตย์เป็นวันหยุดอัตโนมัติ)') +
+  mount(pageHead('การตั้งค่า', 'ปฏิทิน กรอบเวร และช่วงลงตารางเวร', 'กำหนดวันหยุดนักขัตฤกษ์ วันหยุดชดเชย วันปิดศูนย์ กรอบเวรรายวัน และช่วงเปิดลงตารางเวร (เสาร์–อาทิตย์เป็นวันหยุดอัตโนมัติ)') +
     '<div class="filters">' + ymSelect('caYm', ym, 6, 6) + '<div><label class="form-label">หมวด</label>' + segHtml('caTab', [['day', '<i class="bi bi-calendar3"></i> ประเภทวัน'], ['quota', '<i class="bi bi-people"></i> กรอบเวรรายวัน']], S.caTab) + '</div></div>' +
     '<div id="caWin"></div>' + dayLegend() + '<div id="caBody" class="mt-2">' + skeleton(8) + '</div>');
   $('caYm').onchange = function(){ S.caYm = this.value; loadCal(); };
@@ -128,9 +128,9 @@ function loadCal(){ api('getCalendar', { ym: $('caYm').value }).then(function(d)
 function drawCal(){
   if (!$('caBody') || !CA) return;
   var w = CA.window;
-  $('caWin').innerHTML = '<div class="card mb-3"><div class="card-b d-flex flex-wrap gap-3 align-items-end"><div><div class="form-label">ช่วงจองเวรของเดือน ' + esc(thYm(CA.ym)) + '</div>' + windowPill(CA.windowState) + (w.custom ? ' <span class="pill p-info">กำหนดเอง</span>' : ' <span class="small-muted">ตามค่าตั้งต้น</span>') + '</div>' +
-    '<div><label class="form-label" for="bwFrom">เปิดจอง</label><input class="form-control" type="date" id="bwFrom" value="' + esc(w.openFrom) + '"></div><div><label class="form-label" for="bwTo">ปิดจอง</label><input class="form-control" type="date" id="bwTo" value="' + esc(w.openTo) + '"></div>' +
-    '<button class="btn btn-brand" onclick="saveBw(this)"><i class="bi bi-save"></i> บันทึกช่วงจอง</button>' + (w.custom ? '<button class="btn btn-ghost" onclick="saveBw(this,true)">ใช้ค่าตั้งต้น</button>' : '') + '</div></div>';
+  $('caWin').innerHTML = '<div class="card mb-3"><div class="card-b d-flex flex-wrap gap-3 align-items-end"><div><div class="form-label">ช่วงลงตารางเวรของเดือน ' + esc(thYm(CA.ym)) + '</div>' + windowPill(CA.windowState) + (w.custom ? ' <span class="pill p-info">กำหนดเอง</span>' : ' <span class="small-muted">ตามค่าตั้งต้น</span>') + '</div>' +
+    '<div><label class="form-label" for="bwFrom">เปิดลงตารางเวร</label><input class="form-control" type="date" id="bwFrom" value="' + esc(w.openFrom) + '"></div><div><label class="form-label" for="bwTo">ปิดลงตารางเวร</label><input class="form-control" type="date" id="bwTo" value="' + esc(w.openTo) + '"></div>' +
+    '<button class="btn btn-brand" onclick="saveBw(this)"><i class="bi bi-save"></i> บันทึกช่วงลงตารางเวร</button>' + (w.custom ? '<button class="btn btn-ghost" onclick="saveBw(this,true)">ใช้ค่าตั้งต้น</button>' : '') + '</div></div>';
   var h = '';
   if (S.caTab === 'day') {
     h = '<div class="card"><div class="card-h"><h3>ประเภทวัน</h3><span class="sub">วันหยุดชดเชยคิดแบบวันหยุด · ปิดศูนย์ = ไม่มีเวร (เลือกเฉพาะบางศูนย์ได้)</span><button class="btn btn-sm btn-brand ms-auto" onclick="saveCal(this)"><i class="bi bi-save"></i> บันทึกปฏิทิน</button></div><div class="card-b p-0"><div class="table-responsive" style="max-height:66vh"><table class="table tbl mb-0 ca-t"><thead><tr><th>วันที่</th><th>ประเภทวัน</th><th>ชื่อวัน/หมายเหตุ</th><th>ปิดเฉพาะศูนย์</th></tr></thead><tbody>' +
@@ -159,7 +159,7 @@ function drawCal(){
   }
 }
 function saveBw(btn, reset){
-  api('saveBookingWindow', { ym: CA.ym, openFrom: reset ? '' : $('bwFrom').value, openTo: reset ? '' : $('bwTo').value }, { btn: btn }).then(function(){ notify('บันทึกช่วงจองแล้ว'); loadCal(); }).catch(function(){});
+  api('saveBookingWindow', { ym: CA.ym, openFrom: reset ? '' : $('bwFrom').value, openTo: reset ? '' : $('bwTo').value }, { btn: btn }).then(function(){ notify('บันทึกช่วงลงตารางเวรแล้ว'); loadCal(); }).catch(function(){});
 }
 function saveCal(btn){
   var items = $$('.ca-t tbody tr').map(function(tr){ return { date: tr.dataset.d, dayType: $$('.ca-type', tr)[0].value, note: $$('.ca-note', tr)[0].value.trim(), closedBranches: $$('.ca-cb input', tr).filter(function(c){ return c.checked; }).map(function(c){ return c.value; }).join(',') }; });
@@ -481,7 +481,7 @@ function imArch(){
 }
 
 /* ================= ประวัติการใช้งาน ================= */
-var AU_TXT = { LOGIN: 'เข้าสู่ระบบ', LOGIN_FAIL: 'เข้าสู่ระบบไม่สำเร็จ', LOGOUT: 'ออกจากระบบ', CHANGE_PASSWORD: 'เปลี่ยนรหัสผ่าน', RESET_PASSWORD: 'รีเซ็ตรหัสผ่าน', BOOK: 'จองเวร', CANCEL_BOOKING: 'ยกเลิกเวร', CONFIRM_BOOKINGS: 'ยืนยันเวร',
+var AU_TXT = { LOGIN: 'เข้าสู่ระบบ', LOGIN_FAIL: 'เข้าสู่ระบบไม่สำเร็จ', LOGOUT: 'ออกจากระบบ', CHANGE_PASSWORD: 'เปลี่ยนรหัสผ่าน', RESET_PASSWORD: 'รีเซ็ตรหัสผ่าน', BOOK: 'ลงบันทึกตารางเวร', CANCEL_BOOKING: 'ยกเลิกเวร', CONFIRM_BOOKINGS: 'ยืนยันเวร',
   SAVE_GRID: 'บันทึกตารางเวร', CONFIRM_DUTIES: 'ตรงตามใบ', UNCONFIRM_DUTIES: 'ยกเลิกการยืนยัน', MARK_ABSENT: 'ไม่มาปฏิบัติงาน', RESTORE_DUTY: 'คืนรายการ', UPDATE_DUTY: 'แก้ไขรายการ', ADD_DUTY: 'เพิ่มรายการ',
   UPLOAD_ATTACHMENT: 'แนบใบลืมสแกน', DELETE_ATTACHMENT: 'ลบไฟล์แนบ', SUBMIT_BRANCH: 'ศูนย์ส่งให้ฝ่าย', RETURN_BRANCH: 'ตีกลับ', VERIFY_BRANCH: 'ปิดรอบ', ROLLBACK: 'ย้อนสถานะ', EXPORT_HRMI: 'ส่งออก HRMi', EXPORT_HOURS: 'ตารางชั่วโมง',
   EXPORT_SIGN: 'ใบบันทึกเวลา', SAVE_SETTINGS: 'บันทึกตั้งค่า', SAVE_USER: 'บันทึกสิทธิ์', SAVE_POSITION: 'บันทึกตำแหน่ง', SAVE_RATE: 'บันทึกอัตรา', SAVE_CALENDAR: 'บันทึกปฏิทิน', SAVE_QUOTAS: 'บันทึกกรอบเวร', SAVE_SIGNERS: 'บันทึกผู้ลงนาม',

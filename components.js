@@ -307,9 +307,21 @@ function prTable(cols, rows, groupBy){
 function slotMap(){ var m = {}; ['D', 'E'].forEach(function(k){ var l = slotL(k); m[l.s] = k; m[String(l.en || k).toUpperCase()] = k; m[k] = k; }); return m; }
 function parseCell(t){
   t = String(t || '').replace(/\s+/g, '').toUpperCase(); if (!t) return { slots: [] };
-  var map = slotMap(), out = [];
-  for (var i = 0; i < t.length; i++) { var k = map[t.charAt(i)]; if (!k) return { error: 'ไม่รู้จัก "' + t.charAt(i) + '" ใช้ ' + slotL('D').s + ' หรือ ' + slotL('E').s }; if (out.indexOf(k) < 0) out.push(k); }
+  var map = slotMap(), out = [], i = 0;
+  while (i < t.length) {
+    var k = map[t.charAt(i)];
+    if (!k) return { error: 'ไม่รู้จัก "' + t.charAt(i) + '" ใช้ ' + slotL('D').s + ' หรือ ' + slotL('E').s + ' (ต่อท้ายเลขได้ เช่น ' + slotL('D').s + '2)' };
+    i++;
+    if (t.charAt(i) === '*') i++; else { var m = t.slice(i).match(/^\d+/); if (m) { if (+m[0] < 1) return { error: 'เลขเวลาต้องเริ่มที่ 1' }; i += m[0].length; } }
+    if (out.indexOf(k) >= 0) return { error: slotL(k).s + ' ซ้ำในช่องเดียวกัน' };
+    out.push(k);
+  }
   return { slots: out };
+}
+/** คำอธิบายเวลามาตรฐานของตำแหน่ง: ช 08:00-16:00 · ช2 08:00-12:00 */
+function timeLegend(P){
+  var f = function(s, list){ return (list || []).map(function(k, i){ return '<span class="tl-k"><b>' + esc(slotL(s).s + (i ? i + 1 : '')) + '</b> ' + esc(k.replace('-', '–')) + '</span>'; }).join(''); };
+  return '<span class="time-lg">' + f('D', P.day) + f('E', P.eve) + '</span>';
 }
 function cellText(slots){ return ['D', 'E'].filter(function(k){ return slots.indexOf(k) >= 0; }).map(function(k){ return slotL(k).s; }).join(''); }
 function SheetGrid(cfg){
@@ -318,7 +330,7 @@ function SheetGrid(cfg){
   var dates = cfg.dates;
   G.render = function(){
     var anyEdit = cfg.rows.some(function(r){ return r.editable; }) || cfg.canAdd;
-    var h = '<div class="sg-bar">' + (anyEdit ? '<span class="small-muted"><i class="bi bi-keyboard"></i> พิมพ์ <b>' + esc(slotL('D').s) + '</b> = ' + esc(slotL('D').name) + ' · <b>' + esc(slotL('E').s) + '</b> = ' + esc(slotL('E').name) + ' · <b>' + esc(slotL('D').s + slotL('E').s) + '</b> = ทั้งวัน · ลบช่องให้ว่าง = ยกเลิกเวร · วางจาก Excel ได้</span>' : '<span class="small-muted"><i class="bi bi-eye"></i> เปิดดูอย่างเดียว</span>') +
+    var h = '<div class="sg-bar">' + (anyEdit ? '<span class="small-muted"><i class="bi bi-keyboard"></i> พิมพ์ <b>' + esc(slotL('D').s) + '</b> = ' + esc(slotL('D').name) + ' · <b>' + esc(slotL('E').s) + '</b> = ' + esc(slotL('E').name) + ' · <b>' + esc(slotL('D').s + slotL('E').s) + '</b> = ทั้งวัน · <b>' + esc(slotL('D').s) + '2</b> = เวลามาตรฐานแบบที่ 2 · ลบช่องให้ว่าง = ยกเลิกเวร · วางจาก Excel ได้</span>' : '<span class="small-muted"><i class="bi bi-eye"></i> เปิดดูอย่างเดียว</span>') +
       '<span class="ms-auto d-flex gap-2 align-items-center"><span class="sg-cnt" id="sgCnt"></span>' + (anyEdit ? '<button class="btn btn-sm btn-ghost" type="button" id="sgUndo" disabled><i class="bi bi-arrow-counterclockwise"></i> ยกเลิกที่แก้</button><button class="btn btn-sm btn-brand" type="button" id="sgSave" disabled><i class="bi bi-save"></i> บันทึกตาราง</button>' : '') + '</span></div>';
     h += '<div class="sg-wrap"><table class="sg"><thead><tr><th class="sg-code">รหัส</th><th class="sg-name">ชื่อ-นามสกุล</th><th class="sg-hp">ตำแหน่ง (HR)</th>' + dates.map(function(x){ return '<th class="' + dk(x.color) + '" title="' + esc(x.note || '') + '"><div>' + x.d + '</div><small>' + TH_D[x.dow] + '</small></th>'; }).join('') + '<th class="sg-tot">รวม</th></tr></thead><tbody>';
     var order = [], byG = {};
@@ -328,13 +340,13 @@ function SheetGrid(cfg){
       var idx = byG[g], P = (cfg.positions || []).filter(function(p){ return p.id === g; })[0] || { name: posName(g) };
       var q = (cfg.quota || {})[g];
       if (!idx.length && !(q && q.some(function(x){ return x.D || x.E; }))) return;
-      h += '<tr class="sg-g"><td class="sg-code"></td><td class="sg-name" colspan="2"><b>' + esc(posShort(P.name)) + '</b>' + (cfg.onAddRow && cfg.canAdd ? ' <button class="btn btn-sm btn-link py-0" type="button" data-addp="' + g + '"><i class="bi bi-person-plus"></i> เพิ่มบุคลากร</button>' : '') + '</td><td colspan="' + (dates.length + 1) + '"></td></tr>';
+      h += '<tr class="sg-g"><td class="sg-code"></td><td class="sg-name" colspan="2"><b>' + esc(posShort(P.name)) + '</b>' + (cfg.onAddRow && cfg.canAdd ? ' <button class="btn btn-sm btn-link py-0" type="button" data-addp="' + g + '"><i class="bi bi-person-plus"></i> เพิ่มบุคลากร</button>' : '') + '</td><td colspan="' + (dates.length + 1) + '" class="sg-tlg">' + (P.day || P.eve ? timeLegend(P) : '') + '</td></tr>';
       idx.forEach(function(i){
         var r = cfg.rows[i];
         h += '<tr data-row="' + i + '"><td class="sg-code tnum">' + esc(r.empCode) + '</td><td class="sg-name"><b>' + esc(r.name) + '</b>' + (r.partTime ? ' <span class="mini-tag">ชม.</span>' : '') + '</td><td class="sg-hp">' + esc(r.hrPos || '') + '</td>';
         dates.forEach(function(x){
           var v = r.cells[x.d] || '', pend = r.pend && r.pend[x.d], st = r.st && r.st[x.d], rc = v ? recCls(st) : '';
-          h += '<td class="' + dk(x.color) + (pend ? ' sg-pend' : '') + (rc ? ' ' + rc : '') + '"' + (v ? ' title="' + esc((pend ? 'จองเอง รอศูนย์ยืนยัน · ' : '') + recTitle(st)) + '"' : '') + '>' + (r.editable && x.color !== 'CLOSED' ? '<input class="sgc" data-r="' + i + '" data-d="' + x.d + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false" aria-label="' + esc(r.name + ' วันที่ ' + x.d) + '">' : '<span class="sgv">' + esc(v) + '</span>') + '</td>';
+          h += '<td class="' + dk(x.color) + (pend ? ' sg-pend' : '') + (rc ? ' ' + rc : '') + '"' + (v ? ' title="' + esc((pend ? 'ลงเอง รอศูนย์ยืนยัน · ' : '') + recTitle(st)) + '"' : '') + '>' + (r.editable && x.color !== 'CLOSED' ? '<input class="sgc" data-r="' + i + '" data-d="' + x.d + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false" aria-label="' + esc(r.name + ' วันที่ ' + x.d) + '">' : '<span class="sgv">' + esc(v) + '</span>') + '</td>';
         });
         h += '<td class="sg-tot" id="sgt_' + i + '">' + rowTotal(r) + '</td></tr>';
       });
