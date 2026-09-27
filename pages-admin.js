@@ -428,6 +428,8 @@ function imCard(n, icon, title, sub, id, body){
 function imRead(inp){
   readFile(inp).then(function(t){
     var rows = t ? parseCsv(t) : [];
+    // ไฟล์ที่ไม่มีคอลัมน์ ym (เช่น ไฟล์เดือนปัจจุบัน) → คิดเดือนจากวันที่
+    rows.forEach(function(r){ if (!r.ym && /^\d{4}-\d{2}-\d{2}/.test(r.date || '')) r.ym = r.date.slice(0, 7); });
     IM[inp.id] = rows;
     var info = $(inp.id + 'Info');
     if (!rows.length) { info.innerHTML = '<span class="text-danger">ไม่พบข้อมูลในไฟล์</span>'; return; }
@@ -461,7 +463,8 @@ function imLegacy(btn){
 }
 function imLive(btn){
   var rows = imNeed('imLive'); if (!rows) return;
-  var yms = {}; rows.forEach(function(r){ yms[r.ym] = 1; }); var k = Object.keys(yms);
+  var yms = {}; rows.forEach(function(r){ if (r.ym) yms[r.ym] = 1; }); var k = Object.keys(yms);
+  if (!k.length) return alertBox('ไม่พบเดือนในไฟล์', 'ไฟล์ต้องมีคอลัมน์ date รูปแบบ 2026-09-01 (หรือคอลัมน์ ym)', 'warning');
   if (k.length !== 1) return alertBox('ไฟล์ต้องเป็นเดือนเดียว', 'พบ ' + k.length + ' เดือนในไฟล์: ' + k.join(', '), 'warning');
   passwordBox('นำเข้าเดือน ' + thYm(k[0]), fmt(rows.length) + ' รายการ จะเข้าเป็นเวรที่ยืนยันแล้ว\nหลังนำเข้า ให้ตรวจที่หน้า "บันทึกการปฏิบัติงาน" แล้วกด "ตรงตามใบ"', 'นำเข้า').then(function(pw){
     if (pw === null) return;
