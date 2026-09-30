@@ -27,7 +27,7 @@ PAGES.control = function(){
 };
 function loadControl(){
   var ym = $('ctYm').value;
-  api('getControlBoard', { ym: ym }, { fresh: true, onCache: drawControl }).then(drawControl).catch(function(){});
+  apiView('getControlBoard', { ym: ym }, drawControl).catch(function(){});
 }
 function drawControl(d){
   if (!$('ctBody') || d.ym !== $('ctYm').value) return;
@@ -76,7 +76,7 @@ PAGES.close = function(){
   $('clYm').onchange = function(){ S.clYm = this.value; loadClose(); };
   loadClose();
 };
-function loadClose(){ api('getControlBoard', { ym: $('clYm').value }).then(drawClose).catch(function(){}); }
+function loadClose(fresh){ var ym = $('clYm').value; if (fresh) return api('getControlBoard', { ym: ym }, { fresh: true }).then(drawClose).catch(function(){}); apiView('getControlBoard', { ym: ym }, drawClose).catch(function(){}); }
 function drawClose(d){
   if (!$('clBody') || d.ym !== $('clYm').value) return;
   CT = d;
@@ -110,7 +110,7 @@ function clB(id){ return CT.branches.filter(function(b){ return b.id === id; })[
 function clHist(id){ var b = clB(id); showHistory(id, CT.ym, b.period.history); }
 function clReturn(id, btn){
   promptBox('ตีกลับให้ศูนย์' + brName(id) + ' แก้ไข', 'เหตุผล (ศูนย์จะเห็นข้อความนี้)', 'เช่น ใบลงชื่อวันที่ 12 ไม่ตรงกับตาราง').then(function(r){
-    if (r) api('returnBranch', { ym: CT.ym, branchId: id, reason: r }, { btn: btn }).then(function(){ notify('ตีกลับเรียบร้อย'); loadClose(); }).catch(function(){});
+    if (r) api('returnBranch', { ym: CT.ym, branchId: id, reason: r }, { btn: btn }).then(function(){ notify('ตีกลับเรียบร้อย'); loadClose(true); }).catch(function(){});
   });
 }
 function clVerify(id, btn){
@@ -119,12 +119,12 @@ function clVerify(id, btn){
     if (pw === null) return;
     api('verifyBranch', { ym: CT.ym, branchId: id, password: pw }, { btn: btn, block: 'กำลังตรวจและปิดรอบ…', timeout: 300000 }).then(function(){
       Swal.fire({ icon: 'success', title: 'ปิดรอบเรียบร้อย', text: 'พิมพ์เอกสารและส่งออกไฟล์ HRMi ได้ที่หน้า "เอกสารและไฟล์ HRMi"', confirmButtonText: 'รับทราบ' });
-      loadClose();
+      loadClose(true);
     }).catch(function(){});
   });
 }
 function clRollback(id){
-  var b = clB(id), order = ['OPEN', 'SUBMITTED', 'VERIFIED', 'PROPOSED', 'SENT_HR', 'HR_CHECKED'], cur = order.indexOf(b.status);
+  var b = clB(id), order = ['OPEN', 'SUBMITTED', 'VERIFIED', 'SENT_HR'], cur = Math.max(order.indexOf(b.status), { PROPOSED: 3, HR_CHECKED: 4 }[b.status] || -1);
   var opts = order.slice(0, Math.max(cur, 1)).map(function(k){ return '<option value="' + k + '">' + esc(S.boot.pstatus[k]) + '</option>'; }).join('');
   modal('ย้อนสถานะ · ศูนย์' + brName(id), '<div class="small-muted mb-2">สถานะปัจจุบัน ' + statusPill(b.status) + ' · การย้อนสถานะบันทึกประวัติทุกครั้ง</div>' +
     '<label class="form-label" for="rbTo">ย้อนไปเป็น</label><select class="form-select mb-2" id="rbTo">' + opts + '</select>' +
@@ -139,18 +139,16 @@ function clRollback(id){
 }
 
 /* ================= เอกสารและไฟล์ HRMi ================= */
-var DC = { fmt: 'pdf', split: false };
+var DC = { fmt: 'pdf' };
 PAGES.docs = function(){
   var ym = S.dcYm || addYm(S.boot.ym, -1), brs = myBrs(), br = S.dcBr || (isCentral() ? 'all' : curBr());
   S.dcYm = null;
-  mount(pageHead(isCentral() ? 'งานส่วนกลาง' : 'งานศูนย์', 'เอกสารและไฟล์ HRMi', 'ออกใบบันทึกเวลา ตารางชั่วโมง ตารางค่าอาหาร สรุปยอด และไฟล์นำเข้า HRMi · เลือกทั้งหมดหรือรายตำแหน่ง · เอกสารของศูนย์ที่ยังไม่ปิดรอบมีคำว่า "ร่าง"') +
+  mount(pageHead(isCentral() ? 'งานส่วนกลาง' : 'งานศูนย์', 'เอกสารและไฟล์ HRMi', 'กด "พิมพ์" แล้วหน้าต่างพิมพ์ขึ้นทันที (ต้องการไฟล์ ให้เลือกเครื่องพิมพ์เป็น "บันทึกเป็น PDF") · เลือกศูนย์/ตำแหน่งด้านบน · เอกสารของศูนย์ที่ยังไม่ปิดรอบมีคำว่า "ร่าง" · ระบบไม่เก็บสำเนาใน Drive') +
     '<div class="filters">' + ymSelect('dcYm', ym, 14, 1) + brSelect('dcBr', brs, br, isCentral() && brs.length > 1) + '<div id="dcPosW"></div>' +
-    '<div class="d-flex align-items-end pb-1"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" role="switch" id="dcSplit"' + (DC.split ? ' checked' : '') + '><label class="form-check-label" for="dcSplit">แยกไฟล์ทีละตำแหน่ง</label></div></div>' +
     (S.boot.canExcel ? '<div><label class="form-label">รูปแบบไฟล์</label><div class="seg" id="dcFmt"><button data-v="pdf" class="on"><i class="bi bi-file-earmark-pdf"></i> PDF</button><button data-v="xlsx"><i class="bi bi-file-earmark-spreadsheet"></i> Excel</button></div></div>' : '') +
     '</div><div id="dcStat" class="mb-3"></div><div id="dcBody"></div>');
   DC.fmt = 'pdf';
   $$('#dcFmt button').forEach(function(b){ b.onclick = function(){ $$('#dcFmt button').forEach(function(x){ x.classList.toggle('on', x === b); }); DC.fmt = b.dataset.v; }; });
-  $('dcSplit').onchange = function(){ DC.split = this.checked; };
   $('dcYm').onchange = drawDocs; $('dcBr').onchange = function(){ S.dcBr = this.value; S.dcPos = 'all'; drawDocs(); };
   drawDocs();
 };
@@ -185,69 +183,67 @@ function drawDocs(){
   else api('getBranchBoard', { ym: ym, branchId: one ? bid : curBr() }, { quiet: true, fresh: true }).then(function(d){ if ($('dcPills')) $('dcPills').innerHTML = '<span class="ctl-mini">' + brDot(d.branchId) + ' ' + statusPill(d.status) + '</span>'; }).catch(function(){});
   var card = function(icon, cls, title, sub, body, btns){ return '<div class="doc-card"><div class="doc-ic ' + cls + '"><i class="bi bi-' + icon + '"></i></div><div class="flex-grow-1"><h3>' + title + '</h3><p>' + sub + '</p>' + (body || '') + '<div class="doc-act">' + btns + '</div></div></div>'; };
   var h = '<div class="doc-grid">';
-  h += card('file-earmark-text', 'ic-brand', 'ใบบันทึกเวลาการปฏิบัติงาน', 'แบบ FM-HRM-032/01 · 1 หน้า/ตำแหน่ง/ใบที่ · มีรายชื่อตามตารางเวรเพื่อให้บุคลากรลงชื่อ · เลือกทุกศูนย์ได้ (ออกไฟล์แยกตามศูนย์)',
+  h += card('file-earmark-text', 'ic-brand', 'ใบบันทึกเวลาการปฏิบัติงาน', 'แบบ FM-HRM-032/01 · 1 หน้า/ตำแหน่ง/ใบที่ · มีรายชื่อตามตารางเวรเพื่อให้บุคลากรลงชื่อ · เลือกทุกศูนย์ได้ (พิมพ์รวมครั้งเดียว)',
     '<div class="form-check mb-2"><input class="form-check-input" type="checkbox" id="dcBlank"><label class="form-check-label" for="dcBlank">ใบเปล่า (ไม่ใส่รายชื่อ)</label></div>',
-    '<button class="btn btn-brand" onclick="dcSign(this)"><i class="bi bi-printer"></i> สร้างใบบันทึกเวลา</button>');
+    '<button class="btn btn-brand" onclick="dcSign(this)"><i class="bi bi-printer"></i> พิมพ์ใบบันทึกเวลา</button>');
   h += card('table', 'ic-info', 'ตารางชั่วโมง / ตารางเวร', 'เทียบชั่วโมงกับเวร รายตำแหน่ง 1 หน้า/ตาราง · ฉบับเบิก (เฉพาะชั่วโมงที่จ่าย) หรือฉบับตรวจสอบ (รวมรายการที่ยังไม่ยืนยัน)',
     '<div class="row g-2 mb-2"><div class="col-6"><label class="form-label" for="dcDoc">ชนิด</label><select class="form-select" id="dcDoc"><option value="hours">ตารางชั่วโมง</option><option value="duty">ตารางเวร (ตัวย่อ)</option></select></div>' +
     '<div class="col-6"><label class="form-label" for="dcKind">ฉบับ</label><select class="form-select" id="dcKind"><option value="pay">ฉบับเบิก</option><option value="check">ฉบับตรวจสอบ</option></select></div></div>',
-    '<button class="btn btn-brand" onclick="dcHours(this)"><i class="bi bi-file-earmark-pdf"></i> สร้างตาราง</button>');
+    '<button class="btn btn-brand" onclick="dcHours(this)"><i class="bi bi-printer"></i> พิมพ์ตาราง</button>');
   h += card('cup-hot', 'ic-warn', 'ตารางค่าอาหาร (R706)', 'เจ้าหน้าที่ประจำที่ปฏิบัติงานเต็มวัน 08.00–16.00 น. ในวันทำการ · 50 บาท/วัน (Part Time ไม่ได้รับ)', '',
-    '<button class="btn btn-brand" onclick="dcMeal(this)"><i class="bi bi-file-earmark-pdf"></i> สร้างตารางค่าอาหาร</button>');
+    '<button class="btn btn-brand" onclick="dcMeal(this)"><i class="bi bi-printer"></i> พิมพ์ตารางค่าอาหาร</button>');
   h += card('calculator', 'ic-ok', 'สรุปยอดเบิก', 'ยอดชั่วโมงและเงินแยกตามศูนย์ ตำแหน่ง และรหัสรายได้ สำหรับเสนอหัวหน้าฝ่าย', '',
-    '<button class="btn btn-brand" onclick="dcSummary(this)"><i class="bi bi-file-earmark-pdf"></i> สร้างสรุปยอด</button>');
+    '<button class="btn btn-brand" onclick="dcSummary(this)"><i class="bi bi-printer"></i> พิมพ์สรุปยอด</button>');
   if (isCentral()) h += card('filetype-xlsx', 'ic-violet', 'ไฟล์นำเข้า HRMi', 'รูปแบบเดิม (รหัสพนักงาน · รหัสรายได้ · จำนวน) แยกชีทตามรหัสรายได้ · ออกได้เฉพาะศูนย์ที่ปิดรอบแล้ว · เลือกตำแหน่งได้',
     '<div class="row g-2 mb-2"><div class="col-12"><label class="form-label" for="dcMode">รูปแบบ</label><select class="form-select" id="dcMode"><option value="combined">ไฟล์เดียว แยกชีทตามรหัส</option><option value="separate">แยกไฟล์ตามรหัสรายได้</option><option value="zip">แยกไฟล์ รวมเป็น .zip</option></select></div>' +
     '<div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="dcMealOn" checked><label class="form-check-label" for="dcMealOn">รวมค่าอาหาร R706</label></div></div></div>',
     '<button class="btn btn-brand" onclick="dcHRMi(this)"><i class="bi bi-download"></i> ส่งออกไฟล์ HRMi</button>');
   h += card('paperclip', 'ic-mute', 'ใบลืมสแกนรวมเล่ม', 'รวมไฟล์แนบใบลืมสแกนทั้งเดือนเป็น PDF เล่มเดียว พร้อมหน้าสรุปรายการ', '',
-    '<button class="btn btn-ghost" onclick="printAttachments($(\'dcYm\').value,$(\'dcBr\').value)"><i class="bi bi-journal-bookmark"></i> รวมเล่ม PDF</button>');
+    '<button class="btn btn-ghost" onclick="printAttachments($(\'dcYm\').value,$(\'dcBr\').value)"><i class="bi bi-journal-bookmark"></i> รวมเล่ม PDF เพื่อพิมพ์</button>');
   $('dcBody').innerHTML = h + '</div>';
   enhanceSelects($('dcBody'));
 }
 /**
- * สร้างเอกสารตามขอบเขต: ทั้งหมดในไฟล์เดียว หรือแยกไฟล์ทีละตำแหน่ง (เรียกทีละครั้ง แล้วดาวน์โหลดรวม)
- * perBranch = เอกสารที่ออกได้ทีละศูนย์ (ใบบันทึกเวลา)
+ * 30 ก.ย. 69 พิมพ์จากเบราว์เซอร์: ถามเซิร์ฟเวอร์ครั้งเดียว (เฉพาะข้อมูล) แล้วหน้าต่างพิมพ์ขึ้นทันที · ทุกศูนย์/ตำแหน่งที่เลือกรวมในงานพิมพ์เดียว
+ * Excel (ผู้ดูแลระบบ) ยังสร้างที่เซิร์ฟเวอร์เหมือนเดิม
  */
-function dcRun(action, base, btn, msg, perBranch){
-  var brs = dcBrs(), pids = dcPids(false), jobs = [];
-  var mk = function(bs, ids){ var p = {}; for (var k in base) p[k] = base[k]; p.ym = $('dcYm').value; p.format = DC.fmt; p.branchIds = bs; p.branchId = bs[0]; p.positionIds = ids; return p; };
-  if (DC.split) dcPids(true).forEach(function(id){ var P = posOf(id); jobs.push({ p: mk([P.branchId], [id]), name: brName(P.branchId) + ' · ' + posShort(P.name) }); });
-  else if (perBranch) brs.forEach(function(b){ var ids = pids.filter(function(id){ return (posOf(id) || {}).branchId === b; }); if (!pids.length || ids.length) jobs.push({ p: mk([b], ids), name: brName(b) }); });
-  else jobs.push({ p: mk(brs, pids), name: '' });
-  if (jobs.length === 1) return api(action, jobs[0].p, { btn: btn, block: msg || 'กำลังสร้างเอกสาร…', timeout: 330000 }).then(function(r){ download(r.files); }).catch(function(){});
-  var files = [], skip = [], i = 0;
-  btnBusy(btn, true, 'กำลังสร้าง');
-  Swal.fire({ title: msg || 'กำลังสร้างเอกสาร…', html: '<div id="dcTxt" class="small-muted">เตรียม…</div><div class="progress mt-2" style="height:8px"><div id="dcBar" class="progress-bar" style="width:0%"></div></div>', allowOutsideClick: false, showConfirmButton: false });
-  var next = function(){
-    if (i >= jobs.length) {
-      btnBusy(btn, false); Swal.close();
-      if (!files.length) return alertBox('ไม่มีข้อมูลสำหรับสร้างเอกสาร', 'ตำแหน่งที่เลือกไม่มีข้อมูลในเดือนนี้', 'info');
-      download(files);
-      if (skip.length) setTimeout(function(){ notify('ไม่มีข้อมูล (ข้าม): ' + skip.join(', '), 'info'); }, 900);
-      return;
-    }
-    var j = jobs[i++];
-    if ($('dcTxt')) { $('dcTxt').textContent = j.name + ' (' + i + '/' + jobs.length + ')'; $('dcBar').style.width = Math.round(i / jobs.length * 100) + '%'; }
-    api(action, j.p, { quiet: true, timeout: 330000 }).then(function(r){ files = files.concat(r.files || []); next(); }).catch(function(){ skip.push(j.name); next(); });
-  };
-  next();
+function dcRun(doc, base, btn, msg){
+  var p = { doc: doc, ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids(false) };
+  for (var k in base) p[k] = base[k];
+  if (DC.fmt === 'xlsx') {
+    var act = { sign: 'exportSignSheets', hours: 'exportHoursTables', meal: 'exportMeal', summary: 'exportSummary' }[doc];
+    var brs = doc === 'sign' ? p.branchIds : [null], files = [], chain = Promise.resolve();
+    brs.forEach(function(b){ chain = chain.then(function(){ var q = {}; for (var k2 in p) q[k2] = p[k2]; q.format = 'xlsx'; if (b) { q.branchId = b; q.branchIds = [b]; } return api(act, q, { btn: btn, timeout: 330000, quiet: brs.length > 1 }).then(function(r){ files = files.concat(r.files || []); }, function(){}); }); });
+    return chain.then(function(){ if (files.length) download(files); });
+  }
+  return api('printDoc', p, { btn: btn, block: msg || 'กำลังเตรียมเอกสารสำหรับพิมพ์…' }).then(function(r){
+    if (r.kind === 'sign32' && r.positions > 1) notify('ใบบันทึกเวลา ' + r.sheets + ' ใบ (' + r.positions + ' ตำแหน่ง)', 'info');
+    return printBRDoc(r);
+  }).catch(function(){});
 }
-function dcSign(btn){ dcRun('exportSignSheets', { blank: $('dcBlank').checked }, btn, 'กำลังสร้างใบบันทึกเวลา…', true); }
-function dcHours(btn){ dcRun('exportHoursTables', { docType: $('dcDoc').value, kind: $('dcKind').value }, btn, 'กำลังสร้างตาราง…'); }
-function dcMeal(btn){ dcRun('exportMeal', {}, btn, 'กำลังสร้างตารางค่าอาหาร…'); }
-function dcSummary(btn){ dcRun('exportSummary', {}, btn, 'กำลังสร้างสรุปยอด…'); }
+function dcSign(btn){ dcRun('sign', { blank: $('dcBlank').checked }, btn, 'กำลังเตรียมใบบันทึกเวลา…'); }
+function dcHours(btn){ dcRun('hours', { docType: $('dcDoc').value, kind: $('dcKind').value }, btn, 'กำลังเตรียมตาราง…'); }
+function dcMeal(btn){ dcRun('meal', {}, btn, 'กำลังเตรียมตารางค่าอาหาร…'); }
+function dcSummary(btn){ dcRun('summary', {}, btn, 'กำลังเตรียมสรุปยอด…'); }
+/** ไฟล์ HRMi: เซิร์ฟเวอร์ส่งเฉพาะตัวเลข หน้าเว็บสร้าง .xlsx ในเครื่อง (เร็ว ไม่ต้องสร้าง Google Sheet ชั่วคราว) */
 function dcHRMi(btn){
-  api('exportHRMi', { ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids(false), mode: $('dcMode').value, includeMeal: $('dcMealOn').checked }, { btn: btn, block: 'กำลังสร้างไฟล์ HRMi…', timeout: 330000 }).then(function(r){
-    download(r.files);
-    if (r.notReady && r.notReady.length) setTimeout(function(){ notify('ยังไม่ปิดรอบ (ไม่รวมในไฟล์): ' + r.notReady.join(', '), 'warning'); }, 900);
+  var mode = $('dcMode').value;
+  api('hrmiData', { ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids(false), mode: mode, includeMeal: $('dcMealOn').checked }, { btn: btn }).then(function(r){
+    var toSheet = function(x){ return { name: x.code, rows: [r.header].concat(x.rows.map(function(row){ return [/^\d+$/.test(String(row[0])) ? +row[0] : row[0]].concat(row.slice(1)); })) }; };
+    var done = function(){ if (r.notReady && r.notReady.length) setTimeout(function(){ notify('ยังไม่ปิดรอบ (ไม่รวมในไฟล์): ' + r.notReady.join(', '), 'warning'); }, 900); };
+    if (mode === 'combined') { downloadBlobs([{ name: r.tag + '.xlsx', blob: xlsxBlob(r.sheets.map(toSheet)) }]); return done(); }
+    var files = r.sheets.map(function(x){ return { name: x.code + '.xlsx', blob: xlsxBlob([toSheet(x)]) }; });
+    if (mode !== 'zip') { downloadBlobs(files); return done(); }
+    return Promise.all(files.map(function(f){ return f.blob.arrayBuffer(); })).then(function(bufs){
+      downloadBlobs([{ name: r.tag + '.zip', blob: zipBlob(files.map(function(f, i){ return { name: f.name, data: new Uint8Array(bufs[i]) }; })) }]); done();
+    });
   }).catch(function(){});
 }
 
 /* ================= ติดตามการส่งเบิก ================= */
 PAGES.track = function(){
   var ym = S.tkYm || addYm(S.boot.ym, -1);
-  mount(pageHead('งานส่วนกลาง', 'ติดตามการส่งเบิก', 'หลังปิดรอบ: เสนอหัวหน้าฝ่ายลงนาม → ส่ง HR (บันทึกเลขอ้างอิง PAY จาก HRMi) → HR ตรวจแล้ว · ครบทุกศูนย์ 10 วัน ระบบย้ายเข้าคลังข้อมูลอัตโนมัติ') +
+  mount(pageHead('งานส่วนกลาง', 'ติดตามการส่งเบิก', 'หลังปิดรอบและนำเข้า HRMi แล้ว กด "ส่ง HR แล้ว" ขั้นเดียว (เลขอ้างอิง PAY ใส่หรือไม่ใส่ก็ได้) · ส่ง HR ครบทุกศูนย์ 10 วัน ระบบย้ายเข้าคลังข้อมูลให้อัตโนมัติทุกคืน') +
     '<div class="filters">' + ymSelect('tkYm', ym, 14, 0) + '</div><div id="tkBody">' + skeleton(6) + '</div><div id="tkArch" class="mt-3"></div>');
   $('tkYm').onchange = function(){ S.tkYm = this.value; loadTrack(); };
   loadTrack();
@@ -261,46 +257,47 @@ function loadStorage(){
     var rows = st.months.map(function(m){
       var ok = m.canArchive || (adm && m.canForce);
       return '<tr><td><b>' + esc(m.thMonth) + '</b></td><td class="num">' + fmt(m.duties) + '</td><td class="num">' + fmt(m.scans) + '</td><td>' + (m.statuses.length ? [...new Set(m.statuses)].map(function(x){ return statusPill(x); }).join(' ') : '') + '</td>' +
-        '<td class="text-end">' + (ok ? '<button class="btn btn-sm ' + (m.canArchive ? 'btn-brand' : 'btn-ghost') + '" onclick="archiveNow(\'' + m.ym + '\',this)"><i class="bi bi-archive"></i> ย้ายเข้าคลัง</button>' : '<span class="small-muted">' + (m.ym >= S.boot.ym ? 'เดือนปัจจุบัน/อนาคต' : 'รอ HR ตรวจครบทุกศูนย์') + '</span>') + '</td></tr>';
+        '<td class="text-end">' + (ok ? '<button class="btn btn-sm ' + (m.canArchive ? 'btn-brand' : 'btn-ghost') + '" onclick="archiveNow(\'' + m.ym + '\',this)"><i class="bi bi-archive"></i> ย้ายเข้าคลัง</button>' : '<span class="small-muted">' + (m.ym >= S.boot.ym ? 'เดือนปัจจุบัน/อนาคต' : 'รอส่ง HR ครบทุกศูนย์') + '</span>') + '</td></tr>';
     }).join('');
     $('tkArch').innerHTML = '<div class="card"><div class="card-h"><h3><i class="bi bi-database"></i> พื้นที่ข้อมูลและคลังข้อมูลย้อนหลัง</h3><span class="sub">ย้ายเดือนที่จบแล้วออกจากชีทหลักไปเป็นไฟล์รายเดือนในไดรฟ์ ชีทจะเบาและเร็วขึ้น · ข้อมูลยังเปิดดู/พิมพ์ได้ทุกหน้า</span></div><div class="card-b">' +
       '<div class="st-kpi"><div><b>' + fmt(t.duties) + '</b><span>แถวเวรในชีทหลัก</span></div><div><b>' + fmt(t.scans) + '</b><span>แถวสแกน (1 แถว/คน/วัน)</span></div><div><b>' + fmt(t.audit) + '</b><span>แถวประวัติการใช้งาน</span></div><div><b>' + fmt(st.archived) + '</b><span>เดือนในคลัง</span></div></div>' +
       (rows ? '<div class="table-responsive mt-3"><table class="table tbl mb-0"><thead><tr><th>เดือนในชีทหลัก</th><th class="num">เวร</th><th class="num">สแกน</th><th>สถานะ</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '') +
-      '<div class="small-muted mt-2"><i class="bi bi-info-circle"></i> ระบบย้ายให้อัตโนมัติเมื่อทุกศูนย์ "HR ตรวจแล้ว" ครบ ' + st.afterDays + ' วัน · กดปุ่มเพื่อย้ายทันทีได้' + (adm ? ' · ผู้ดูแลระบบย้ายเดือนที่ปิดรอบครบแล้วได้ (ปุ่มสีขาว)' : '') + '</div>' +
+      '<div class="small-muted mt-2"><i class="bi bi-info-circle"></i> ระบบย้ายให้อัตโนมัติทุกคืนเมื่อทุกศูนย์ "ส่ง HR แล้ว" ครบ ' + st.afterDays + ' วัน · กดปุ่มเพื่อย้ายทันทีได้' + (adm ? ' · ผู้ดูแลระบบย้ายเดือนที่ปิดรอบครบแล้วได้ (ปุ่มสีขาว)' : '') + '</div>' +
       '<div class="fw-semibold mt-3 mb-2">คลังข้อมูลย้อนหลัง · ' + list.length + ' เดือน</div>' +
       (list.length ? '<div class="arch-list">' + list.map(function(a){ return '<span class="arch-i" title="' + esc(a.archivedAt) + '"><b>' + esc(a.thMonth) + '</b><small>' + fmt(a.rows) + ' รายการ · ' + (a.source === 'legacy' ? 'ระบบเดิม' : 'ระบบนี้') + '</small></span>'; }).join('') + '</div>' : empty('archive', 'ยังไม่มีเดือนในคลัง')) + '</div></div>';
   }).catch(function(){});
 }
 function archiveNow(ym, btn){
-  passwordBox('ย้ายเดือน ' + thYm(ym) + ' เข้าคลัง', 'ระบบจะสร้างไฟล์ Archive รายเดือนในไดรฟ์ ตรวจว่าเขียนครบ แล้วจึงลบออกจากชีทหลัก\nหลังย้ายแล้วแก้ไขข้อมูลเดือนนี้ไม่ได้ (ดูและพิมพ์ได้ตามปกติ)', 'ย้ายเข้าคลัง').then(function(pw){
-    if (pw === null) return;
-    api('archiveNow', { ym: ym, password: pw }, { btn: btn, block: 'กำลังย้ายข้อมูลเข้าคลัง…', timeout: 330000 }).then(function(r){
-      Swal.fire({ icon: 'success', title: 'ย้ายเข้าคลังเรียบร้อย', text: thYm(r.ym) + ' · ' + fmt(r.rows) + ' รายการ', confirmButtonText: 'รับทราบ' }); loadStorage(); loadTrack();
+  // 30 ก.ย. 69: ไม่ต้องใส่รหัสผ่าน (ปกติระบบย้ายให้เองทุกคืน ปุ่มนี้ใช้เมื่อต้องการย้ายทันที)
+  confirmBox('ย้ายเดือน ' + thYm(ym) + ' เข้าคลัง', 'ระบบจะสร้างไฟล์ Archive รายเดือนในไดรฟ์ ตรวจว่าเขียนครบ แล้วจึงลบออกจากชีทหลัก\nหลังย้ายแล้วแก้ไขข้อมูลเดือนนี้ไม่ได้ (ดูและพิมพ์ได้ตามปกติ)', 'ย้ายเข้าคลัง').then(function(ok){
+    if (!ok) return;
+    api('archiveNow', { ym: ym }, { btn: btn, block: 'กำลังย้ายข้อมูลเข้าคลัง…', timeout: 330000 }).then(function(r){
+      Swal.fire({ icon: 'success', title: 'ย้ายเข้าคลังเรียบร้อย', text: thYm(r.ym) + ' · ' + fmt(r.rows) + ' รายการ', confirmButtonText: 'รับทราบ' }); loadStorage(); loadTrack(true);
     }).catch(function(){});
   });
 }
-function loadTrack(){ api('getControlBoard', { ym: $('tkYm').value }).then(drawTrack).catch(function(){}); }
+function loadTrack(fresh){ var ym = $('tkYm').value; if (fresh) return api('getControlBoard', { ym: ym }, { fresh: true }).then(drawTrack).catch(function(){}); apiView('getControlBoard', { ym: ym }, drawTrack).catch(function(){}); }
 function drawTrack(d){
   if (!$('tkBody') || d.ym !== $('tkYm').value) return;
   CT = d;
   var col = function(v){ return v ? '<span class="tk-ok"><i class="bi bi-check-circle-fill"></i> ' + esc(/^\d{4}-\d{2}-\d{2}/.test(v) ? thDate(String(v).slice(0, 10)) : String(v).slice(0, 10)) + '</span>' : '<span class="small-muted">—</span>'; };
-  var h = '<div class="card"><div class="card-b p-0"><div class="table-responsive"><table class="table tbl mb-0 tk-t"><thead><tr><th style="width:36px"><input class="form-check-input" type="checkbox" id="tkAll" aria-label="เลือกทั้งหมด"></th><th>ศูนย์</th><th>สถานะ</th><th>ปิดรอบ</th><th>เสนอหัวหน้าฝ่าย</th><th>ส่ง HR</th><th>เลขอ้างอิง PAY</th><th>HR ตรวจ</th><th class="num">ยอดเงิน</th><th></th></tr></thead><tbody>' +
+  var h = '<div class="card"><div class="card-b p-0"><div class="table-responsive"><table class="table tbl mb-0 tk-t"><thead><tr><th style="width:36px"><input class="form-check-input" type="checkbox" id="tkAll" aria-label="เลือกทั้งหมด"></th><th>ศูนย์</th><th>สถานะ</th><th>ปิดรอบ</th><th>ส่ง HR</th><th>เลขอ้างอิง PAY <small class="fw-normal">(ไม่บังคับ)</small></th><th class="num">ยอดเงิน</th><th></th></tr></thead><tbody>' +
     d.branches.map(function(b){ var p = b.period; return '<tr><td><input class="form-check-input tk-sel" type="checkbox" data-id="' + b.id + '" aria-label="เลือก ' + esc(b.name) + '"></td><td>' + brDot(b.id) + '</td><td>' + statusPill(b.status) + '</td>' +
-      '<td>' + col(p.verifiedAt) + '</td><td>' + col(p.proposedAt) + '</td><td>' + col(p.sentHrAt) + '</td><td><span class="tk-ref">' + esc(p.payRefs || '') + '</span> <button class="btn btn-sm btn-link p-0" onclick="tkRefs(\'' + b.id + '\')" title="แก้ไขเลขอ้างอิง" aria-label="แก้ไขเลขอ้างอิง"><i class="bi bi-pencil"></i></button></td><td>' + col(p.hrCheckedAt) + '</td>' +
+      '<td>' + col(p.verifiedAt) + '</td><td>' + col(p.sentHrAt || p.hrCheckedAt) + '</td><td><span class="tk-ref">' + esc(p.payRefs || '') + '</span> <button class="btn btn-sm btn-link p-0" onclick="tkRefs(\'' + b.id + '\')" title="แก้ไขเลขอ้างอิง" aria-label="แก้ไขเลขอ้างอิง"><i class="bi bi-pencil"></i></button></td>' +
       '<td class="num">' + money(b.summary.amount) + '</td><td><button class="btn btn-sm btn-ghost" onclick="clHist(\'' + b.id + '\')" title="ประวัติ" aria-label="ประวัติ"><i class="bi bi-clock-history"></i></button></td></tr>'; }).join('') +
     '</tbody></table></div></div></div>';
-  h += '<div class="tk-steps">' + [['PROPOSED', 'person-check', 'เสนอหัวหน้าฝ่ายแล้ว', 'หลังหัวหน้าฝ่ายลงนามเอกสาร'], ['SENT_HR', 'box-arrow-up-right', 'ส่ง HR แล้ว', 'นำเข้า HRMi และบันทึกเลขอ้างอิง PAY'], ['HR_CHECKED', 'patch-check', 'HR ตรวจแล้ว', 'HR แจ้งตรวจสอบเรียบร้อย']].map(function(x){
-    return '<button class="tk-step" onclick="tkAdvance(\'' + x[0] + '\',this)"><i class="bi bi-' + x[1] + '"></i><div><b>' + x[2] + '</b><span>' + x[3] + '</span></div></button>'; }).join('') + '</div><div class="small-muted mt-1">ติ๊กเลือกศูนย์ (หรือไม่เลือก = ทุกศูนย์ที่อยู่ในขั้นก่อนหน้า) แล้วกดขั้นตอน</div>';
+  h += '<div class="tk-steps">' + [['SENT_HR', 'box-arrow-up-right', 'ส่ง HR แล้ว', 'หลังนำเข้า HRMi และส่งเอกสารให้ HR (ใส่เลขอ้างอิง PAY ได้ถ้ามี)']].map(function(x){
+    return '<button class="tk-step" onclick="tkAdvance(\'' + x[0] + '\',this)"><i class="bi bi-' + x[1] + '"></i><div><b>' + x[2] + '</b><span>' + x[3] + '</span></div></button>'; }).join('') + '</div><div class="small-muted mt-1">ติ๊กเลือกศูนย์ (หรือไม่เลือก = ทุกศูนย์ที่ปิดรอบแล้ว) แล้วกด "ส่ง HR แล้ว" · การเสนอหัวหน้าฝ่ายลงนามและการตรวจของ HR ทำนอกระบบตามปกติ</div>';
   $('tkBody').innerHTML = h;
   $('tkAll').onchange = function(){ var on = this.checked; $$('.tk-sel').forEach(function(c){ c.checked = on; }); };
 }
 function tkAdvance(step, btn){
-  var need = { PROPOSED: 'VERIFIED', SENT_HR: 'PROPOSED', HR_CHECKED: 'SENT_HR' }[step];
+  var need = { SENT_HR: ['VERIFIED', 'PROPOSED'] }[step] || [];
   var ids = $$('.tk-sel').filter(function(c){ return c.checked; }).map(function(c){ return c.dataset.id; });
-  if (!ids.length) ids = CT.branches.filter(function(b){ return b.status === need; }).map(function(b){ return b.id; });
-  if (!ids.length) return alertBox('ยังไม่มีศูนย์ที่พร้อม', 'ขั้นตอนนี้ทำได้กับศูนย์ที่อยู่สถานะ "' + S.boot.pstatus[need] + '"', 'info');
+  if (!ids.length) ids = CT.branches.filter(function(b){ return need.indexOf(b.status) >= 0; }).map(function(b){ return b.id; });
+  if (!ids.length) return alertBox('ยังไม่มีศูนย์ที่พร้อม', 'กด "ส่ง HR แล้ว" ได้กับศูนย์ที่ "ตรวจแล้ว · ปิดรอบ"', 'info');
   var names = ids.map(brName).join(', ');
-  var run = function(refs){ api('advancePeriods', { ym: CT.ym, branchIds: ids, step: step, payRefs: refs }, { btn: btn }).then(function(r){ resultBox(S.boot.pstatus[step], r.results); loadTrack(); }).catch(function(){}); };
+  var run = function(refs){ api('advancePeriods', { ym: CT.ym, branchIds: ids, step: step, payRefs: refs }, { btn: btn }).then(function(r){ resultBox(S.boot.pstatus[step], r.results); loadTrack(true); }).catch(function(){}); };
   if (step === 'SENT_HR') {
     Swal.fire({ title: 'ส่ง HR แล้ว', html: '<div class="small-muted mb-2">' + esc(names) + '</div>', input: 'text', inputLabel: 'เลขอ้างอิง PAY จาก HRMi (ถ้ามี)', inputPlaceholder: 'เช่น PAY2569100012, PAY2569100013',
       showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก', reverseButtons: true }).then(function(r){ if (r.isConfirmed) run(r.value || ''); });
@@ -309,6 +306,6 @@ function tkAdvance(step, btn){
 function tkRefs(id){
   var b = clB(id);
   Swal.fire({ title: 'เลขอ้างอิง PAY · ' + brName(id), input: 'text', inputValue: b.period.payRefs || '', inputPlaceholder: 'คั่นหลายเลขด้วย ,', showCancelButton: true, confirmButtonText: 'บันทึก', cancelButtonText: 'ยกเลิก', reverseButtons: true }).then(function(r){
-    if (r.isConfirmed) api('savePayRefs', { ym: CT.ym, branchId: id, payRefs: r.value }).then(function(){ notify('บันทึกแล้ว'); loadTrack(); }).catch(function(){});
+    if (r.isConfirmed) api('savePayRefs', { ym: CT.ym, branchId: id, payRefs: r.value }).then(function(){ notify('บันทึกแล้ว'); loadTrack(true); }).catch(function(){});
   });
 }

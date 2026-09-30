@@ -11,8 +11,9 @@ function brTabs(id, ids, val, onPick){
 function bindBrTabs(id, cb){ $$('#' + id + ' .br-tab').forEach(function(t){ t.onclick = function(){ $$('#' + id + ' .br-tab').forEach(function(x){ x.classList.toggle('on', x === t); }); cb(t.dataset.b); }; }); }
 function dateTh(d){ return TH_DF[dowOf(d)] + ' ' + thDate(d); }
 function stepper(st){
-  var steps = [['OPEN', 'บันทึก'], ['SUBMITTED', 'ศูนย์ส่ง'], ['VERIFIED', 'ปิดรอบ'], ['PROPOSED', 'เสนอหัวหน้าฝ่าย'], ['SENT_HR', 'ส่ง HR'], ['HR_CHECKED', 'HR ตรวจ']];
-  var idx = { OPEN: 0, RETURNED: 0, SUBMITTED: 1, VERIFIED: 2, PROPOSED: 3, SENT_HR: 4, HR_CHECKED: 5 }[st] || 0;
+  // 30 ก.ย. 69 ลดเหลือ 4 ขั้น (เสนอหัวหน้าฝ่าย/HR ตรวจ ทำนอกระบบ)
+  var steps = [['OPEN', 'บันทึก'], ['SUBMITTED', 'ศูนย์ส่ง'], ['VERIFIED', 'ปิดรอบ'], ['SENT_HR', 'ส่ง HR']];
+  var idx = { OPEN: 0, RETURNED: 0, SUBMITTED: 1, VERIFIED: 2, PROPOSED: 2, SENT_HR: 3, HR_CHECKED: 3 }[st] || 0;
   return '<ol class="stepper' + (st === 'RETURNED' ? ' ret' : '') + '">' + steps.map(function(s, i){ return '<li class="' + (i < idx ? 'done' : i === idx ? 'cur' : '') + '"><i>' + (i < idx ? '<b class="bi bi-check-lg"></b>' : i + 1) + '</i><span>' + (i === 0 && st === 'RETURNED' ? 'ถูกตีกลับ' : s[1]) + '</span></li>'; }).join('') + '</ol>';
 }
 /** เลือกไฟล์แล้วอัปโหลดใบลืมสแกน */
@@ -44,8 +45,9 @@ PAGES.my = function(){
 };
 function loadMy(){
   var ym = $('myYm').value;
-  api('getMyMonth', { ym: ym }, { fresh: true, onCache: drawMy }).then(drawMy).catch(function(){});
+  apiView('getMyMonth', { ym: ym }, function(r){ if (!$('myYm') || $('myYm').value !== ym) return; drawMy(r); }).catch(function(){});
 }
+function loadMyFresh(){ var ym = $('myYm') && $('myYm').value; if (!ym) return; api('getMyMonth', { ym: ym }, { fresh: true, quiet: true }).then(function(r){ if ($('myYm') && $('myYm').value === ym) drawMy(r); }).catch(function(){}); }
 function drawMy(r){
   if (!$('myBody')) return;
   var t = r.total, today = r.today;
@@ -71,8 +73,8 @@ function drawMy(r){
         '<div class="dl-main"><div class="dl-t">' + slotTag(d.slot) + ' <b>' + esc(d.timeIn + '–' + d.timeOut) + '</b> ' + brChip(d.branchId) + ' <span class="small-muted">' + esc(posShort(d.posName)) + ' · ใบที่ ' + d.lineNo + '</span></div>' +
         '<div class="dl-s">' + st + ' ' + (d.scanStatus && d.date < today ? scanPill(d.scanStatus) : '') + (d.scanIn ? ' <span class="small-muted">สแกน ' + esc(d.scanIn) + (d.scanOut && d.scanOut !== d.scanIn ? '–' + esc(d.scanOut) : '') + '</span>' : '') + ' ' + flagChips(d.flags.filter(function(f){ return f !== 'NOT_CONFIRMED' && f !== 'PENDING_BOOK'; }), 3) + '</div></div>' +
         '<div class="dl-pay">' + (d.payType === 'HOURLY' ? '<b>' + hrs(d.workStatus === 'WORKED' ? d.hours : d.planned) + '</b> ชม.<small>' + money(d.workStatus === 'WORKED' ? d.amount : d.planned * d.rate) + ' บาท</small>' : d.payType === 'FULLTIME' ? '<b>Full Time</b><small>' + (d.meal ? 'ค่าอาหาร ' + money(brOf(d.branchId).mealRate) : 'ในเวลาราชการ') + '</small>' : '<b>—</b><small>ไม่จ่ายรายชั่วโมง</small>') + '</div>' +
-        '<div class="dl-act">' + d.attachIds.map(function(a, i){ return '<button class="btn btn-sm btn-ghost" onclick="viewAttach(\'' + a + '\',' + (locked ? 'null' : 'loadMy') + ')"><i class="bi bi-paperclip"></i> ใบที่ ' + (i + 1) + '</button>'; }).join('') +
-        (needDoc && !locked ? '<button class="btn btn-sm btn-soft" onclick="attachForm(\'' + d.id + '\',loadMy)"><i class="bi bi-upload"></i> แนบใบลืมสแกน</button>' : '') +
+        '<div class="dl-act">' + d.attachIds.map(function(a, i){ return '<button class="btn btn-sm btn-ghost" onclick="viewAttach(\'' + a + '\',' + (locked ? 'null' : 'loadMyFresh') + ')"><i class="bi bi-paperclip"></i> ใบที่ ' + (i + 1) + '</button>'; }).join('') +
+        (needDoc && !locked ? '<button class="btn btn-sm btn-soft" onclick="attachForm(\'' + d.id + '\',loadMyFresh)"><i class="bi bi-upload"></i> แนบใบลืมสแกน</button>' : '') +
         (d.bookStatus === 'PENDING' ? '<button class="btn btn-sm btn-danger-soft" onclick="myCancel(\'' + d.id + '\')"><i class="bi bi-x-lg"></i> ยกเลิก</button>' : '') + '</div></div>';
     });
     h += '</div></div>';
@@ -83,7 +85,7 @@ function drawMy(r){
 }
 function myCancel(id){
   confirmBox('ยกเลิกเวรที่ลงไว้', 'ยกเลิกเวรนี้? (ยกเลิกเองได้เฉพาะเวรที่ศูนย์ยังไม่ยืนยัน ในช่วงเปิดลงตารางเวร)', 'ยกเลิกเวร', true).then(function(ok){
-    if (ok) api('cancelBooking', { id: id }).then(function(){ notify('ยกเลิกเวรแล้ว'); loadMy(); }).catch(function(){});
+    if (ok) { savingChip(1); api('cancelBooking', { id: id }).then(function(){ savingChip(-1, true); notify('ยกเลิกเวรแล้ว'); loadMyFresh(); }).catch(function(){ savingChip(-1, false); }); }
   });
 }
 
@@ -101,8 +103,25 @@ PAGES.booking = function(){
   S.bkBr = br;
   loadBooking();
 };
-function loadBooking(){
-  api('getBookingBoard', { ym: $('bkYm').value, branchId: S.bkBr }, { fresh: true, onCache: drawBooking }).then(drawBooking).catch(function(){});
+function loadBooking(fresh){
+  var ym = $('bkYm').value, br = S.bkBr, ok = function(b){ return $('bkBody') && $('bkYm').value === ym && S.bkBr === br && b.ym === ym && b.branchId === br; };
+  // หลังบันทึก (fresh) โหลดข้อมูลล่าสุดตรง ๆ · เปิดหน้า/เปลี่ยนศูนย์ แสดงข้อมูลที่จำไว้ทันที แล้วอัปเดตเบื้องหลัง
+  if (fresh) return api('getBookingBoard', { ym: ym, branchId: br }, { fresh: true, quiet: true }).then(function(b){ if (ok(b)) drawBooking(b); }).catch(function(){ if (BK && ok(BK)) drawBooking(BK); });
+  apiView('getBookingBoard', { ym: ym, branchId: br }, function(b){ if (ok(b)) drawBooking(b); }).catch(function(){});
+}
+/* 30 ก.ย. 69 ลงตารางเวร/ยกเลิกแบบไม่ต้องรอ: ช่องเปลี่ยนเป็น "ของฉัน" ทันที (กะพริบ = กำลังบันทึก) แล้วระบบบันทึกเบื้องหลัง */
+function bkOptimistic(k, add){
+  var c = BK && BK.cells[k]; if (!c) return;
+  if (add) { c.n++; c.people = c.people.concat([{ id: '_tmp', mine: add === 'me', pending: true, line: c.n, name: add === 'me' ? S.boot.me.name : add, times: '' }]); }
+  else { c.n = Math.max(0, c.n - 1); c.people = c.people.filter(function(p){ return !p.mine; }); }
+  drawBooking(BK);
+  var el = document.querySelector('#bkBody .bslot[data-k="' + CSS.escape(k) + '"]'); if (el) el.classList.add('saving');
+}
+function bkSave(action, payload, k, add, msg){
+  var snap = JSON.stringify(BK);
+  bkOptimistic(k, add); savingChip(1);
+  api(action, payload).then(function(){ savingChip(-1, true); notify(msg); loadBooking(true); })
+    .catch(function(){ savingChip(-1, false); var b = JSON.parse(snap); if ($('bkBody') && S.bkBr === b.branchId) drawBooking(b); });
 }
 function drawBooking(b){
   if (!$('bkBody')) return;
@@ -153,17 +172,17 @@ function openSlot(k){
     (times.length > 1 ? '<label class="form-label mt-3" for="slTime">เวลาปฏิบัติงาน</label><select class="form-select" id="slTime">' + times.map(function(t){ return '<option>' + esc(t) + '</option>'; }).join('') + '</select>' : '');
   var btns = [{ text: 'ปิด', cls: 'btn-ghost' }];
   if (b.canBook) {
-    if (mine && mine.pending) btns.push({ text: '<i class="bi bi-x-lg"></i> ยกเลิกเวรของฉัน', cls: 'btn-danger-soft', onClick: function(){ api('cancelBooking', { id: mine.id }).then(function(){ notify('ยกเลิกเวรแล้ว'); loadBooking(); }).catch(function(){}); } });
+    if (mine && mine.pending) btns.push({ text: '<i class="bi bi-x-lg"></i> ยกเลิกเวรของฉัน', cls: 'btn-danger-soft', onClick: function(){ bkSave('cancelBooking', { id: mine.id }, k, false, 'ยกเลิกเวรแล้ว'); } });
     if (b.manage && c.n < c.q) btns.push({ text: '<i class="bi bi-person-plus"></i> ลงเวรแทน', cls: 'btn-soft', onClick: function(){ var t = $('slTime') ? $('slTime').value : times[0];
-      setTimeout(function(){ pickPerson('ลงเวรแทน · ' + dateTh(date), P.jobId).then(function(pp){ if (pp) api('book', { positionId: P.id, date: date, slot: s, times: t, empCode: pp.c }, { block: 'กำลังลงเวร…' }).then(function(){ notify('ลงเวร ' + pp.n + ' แล้ว'); loadBooking(); }).catch(function(){}); }); }, 300); } });
+      setTimeout(function(){ pickPerson('ลงเวรแทน · ' + dateTh(date), P.jobId).then(function(pp){ if (pp) bkSave('book', { positionId: P.id, date: date, slot: s, times: t, empCode: pp.c }, k, pp.n, 'ลงเวร ' + pp.n + ' แล้ว'); }); }, 300); } });
     if (!mine && c.n < c.q && (S.boot.myJobs || []).indexOf(P.jobId) >= 0) btns.push({ text: '<i class="bi bi-calendar2-check"></i> ลงตารางเวรนี้', cls: 'btn-brand', onClick: function(){ var t = $('slTime') ? $('slTime').value : times[0];
-      api('book', { positionId: P.id, date: date, slot: s, times: t }, { block: 'กำลังลงตารางเวร…' }).then(function(){ notify('ลงตารางเวรเรียบร้อย รอศูนย์ยืนยัน'); loadBooking(); }).catch(function(){}); } });
+      bkSave('book', { positionId: P.id, date: date, slot: s, times: t }, k, 'me', 'ลงตารางเวรเรียบร้อย รอศูนย์ยืนยัน'); } });
   }
   modal('ช่วงเวร', body, btns);
 }
 function slotRemove(id, name){
   MDL.hide();
-  promptBox('นำ ' + name + ' ออกจากตาราง', 'เหตุผล (บันทึกในประวัติ)', 'เช่น แลกเวร / ลงผิด').then(function(r){ if (r) api('cancelBooking', { id: id, reason: r }).then(function(){ notify('นำออกจากตารางแล้ว'); loadBooking(); }).catch(function(){}); });
+  promptBox('นำ ' + name + ' ออกจากตาราง', 'เหตุผล (บันทึกในประวัติ)', 'เช่น แลกเวร / ลงผิด').then(function(r){ if (r) { savingChip(1); api('cancelBooking', { id: id, reason: r }).then(function(){ savingChip(-1, true); notify('นำออกจากตารางแล้ว'); loadBooking(true); }).catch(function(){ savingChip(-1, false); }); } });
 }
 
 /* ================= ตารางเวรรวม (ดูอย่างเดียว) ================= */
@@ -178,7 +197,8 @@ PAGES.schedule = function(){
   loadSchedule();
 };
 function loadSchedule(){
-  api('getScheduleGrid', { ym: $('scYm').value, branchId: S.scBr }, { fresh: true, onCache: drawSchedule }).then(drawSchedule).catch(function(){});
+  var ym = $('scYm').value, br = S.scBr;
+  apiView('getScheduleGrid', { ym: ym, branchId: br }, function(g){ if (!$('scYm') || $('scYm').value !== ym || S.scBr !== br) return; drawSchedule(g); }).catch(function(){});
 }
 function drawSchedule(g){
   if (!$('scBody')) return;
@@ -197,7 +217,9 @@ PAGES.branch = function(){
 };
 function loadBranchBoard(){
   var br = curBr(), ym = S.boot.ym;
-  Promise.all([api('getBranchBoard', { ym: ym, branchId: br }), api('getBranchBoard', { ym: addYm(ym, -1), branchId: br }, { quiet: true }).catch(function(){ return null; })]).then(function(rs){ drawBranchBoard(rs[0], rs[1]); }).catch(function(){});
+  var st = { a: null, b: null }, draw = function(){ if (st.a && S.page === 'branch' && curBr() === br) drawBranchBoard(st.a, st.b); };
+  apiView('getBranchBoard', { ym: ym, branchId: br }, function(d){ st.a = d; draw(); }).catch(function(){});
+  apiView('getBranchBoard', { ym: addYm(ym, -1), branchId: br }, function(d){ st.b = d; draw(); }, { quiet: true }).catch(function(){});
 }
 function drawBranchBoard(d, prev){
   if (!$('dbBody')) return;
@@ -262,8 +284,9 @@ function plConfirm(btn){ api('confirmBookings', { ym: $('plYm').value, branchId:
 function plPrint(btn){
   modal('พิมพ์ใบบันทึกเวลาการปฏิบัติงาน', '<div class="small-muted mb-2">แบบฟอร์ม FM-HRM-032/01 · 1 หน้า/เดือน/ตำแหน่ง/ใบที่ · ช่องที่ไม่มีกรอบเวรเป็นสีเทาทึบ</div>' +
     posSelect('ppPos', curBr(), 'all', true) + '<div class="form-check mt-3"><input class="form-check-input" type="checkbox" id="ppBlank"><label class="form-check-label" for="ppBlank">ใบเปล่า (ไม่ใส่รายชื่อตามตาราง)</label></div>',
-    [{ text: 'ยกเลิก', cls: 'btn-ghost' }, { text: '<i class="bi bi-file-earmark-pdf"></i> สร้าง PDF', cls: 'btn-brand', onClick: function(){
-      api('exportSignSheets', { ym: $('plYm').value, branchId: curBr(), positionId: $('ppPos').value, blank: $('ppBlank').checked }, { block: 'กำลังสร้างใบบันทึกเวลา…', timeout: 300000 }).then(function(r){ download(r.files); }).catch(function(){}); } }]);
+    [{ text: 'ยกเลิก', cls: 'btn-ghost' }, { text: '<i class="bi bi-printer"></i> พิมพ์ / บันทึก PDF', cls: 'btn-brand', onClick: function(){
+      var pid = $('ppPos').value;
+      api('printDoc', { doc: 'sign', ym: $('plYm').value, branchIds: [curBr()], positionIds: pid && pid !== 'all' ? [pid] : [], blank: $('ppBlank').checked }, { block: 'กำลังเตรียมใบบันทึกเวลาสำหรับพิมพ์…' }).then(printBRDoc).catch(function(){}); } }]);
 }
 
 /* ================= บันทึกการปฏิบัติงาน ================= */
@@ -284,9 +307,12 @@ PAGES.entry = function(){
   loadEntry(true);
 };
 function loadEntry(reset){
-  var br = $('enBr') ? $('enBr').value : curBr();
+  var br = $('enBr') ? $('enBr').value : curBr(), ym = $('enYm').value;
+  var ok = function(d){ return $('enBody') && $('enYm').value === ym && ($('enBr') ? $('enBr').value : curBr()) === br && d.ym === ym; };
   if (reset) { EN.sheet = 0; EN.sel = {}; }
-  api('getEntrySheet', { ym: $('enYm').value, branchId: br, positionId: 'all' }).then(function(d){ EN.data = d; drawEntry(); }).catch(function(){});
+  // เปิดหน้า/เปลี่ยนตัวกรอง (reset) แสดงข้อมูลที่จำไว้ทันที · หลังบันทึก โหลดข้อมูลล่าสุดตรง ๆ
+  if (reset) return apiView('getEntrySheet', { ym: ym, branchId: br, positionId: 'all' }, function(d){ if (!ok(d) || EN.saving) return; EN.data = d; drawEntry(); }).catch(function(){});
+  return api('getEntrySheet', { ym: ym, branchId: br, positionId: 'all' }, { fresh: true }).then(function(d){ if (!ok(d)) return; EN.data = d; drawEntry(); }).catch(function(){});
 }
 function enSync(btn){
   var br = $('enBr') ? $('enBr').value : curBr();
@@ -347,7 +373,7 @@ function sheetCell(x, day, s, inQuota, editable, P){
   }
   var past = x.date <= S.boot.today;
   var cls = x.red ? 'bad' : x.workStatus === 'WORKED' ? 'ok' : past ? 'todo' : 'plan';
-  return '<td class="sc sc-' + cls + '" data-cell="' + x.id + '"><div class="sc-n"><b>' + esc(x.name) + '</b><small class="tnum">' + esc(x.empCode) + (x.partTime ? ' · ชม.' : '') + '</small></div>' +
+  return '<td class="sc sc-' + cls + (x._saving ? ' saving' : '') + '" data-cell="' + x.id + '"><div class="sc-n"><b>' + esc(x.name) + '</b><small class="tnum">' + esc(x.empCode) + (x.partTime ? ' · ชม.' : '') + '</small></div>' +
     '<div class="sc-m">' + (isStd(x, P) ? '' : '<span class="tag">' + esc(x.timeIn + '–' + x.timeOut) + '</span>') + (x.payType === 'HOURLY' ? '<span class="sc-h">' + hrs(x.workStatus === 'WORKED' ? x.hours : x.planned) + ' ชม.</span>' : x.payType === 'FULLTIME' ? '<span class="sc-h ft">FT' + (x.meal ? ' ☕' : '') + '</span>' : '') +
     (x.scanStatus && past ? '<span class="sc-scan ' + scanCls(x.scanStatus) + '" title="' + esc(x.scanStatus) + '"><i class="bi bi-fingerprint"></i>' + esc(x.scanOut || x.scanIn || '') + '</span>' : '') + (x.attachIds.length ? '<i class="bi bi-paperclip" title="มีใบลืมสแกน"></i>' : '') + '</div>' +
     (x.flags.length ? '<div class="sc-f">' + flagChips(x.flags.filter(function(f){ return f !== 'NOT_CONFIRMED' && f !== 'LEGACY'; }), 2) + '</div>' : '') +
@@ -355,9 +381,18 @@ function sheetCell(x, day, s, inQuota, editable, P){
 }
 function isStd(x, P){ var k = x.timeIn + '-' + x.timeOut; return (x.slot === 'D' ? P.day : P.eve).indexOf(k) >= 0; }
 function scanCls(s){ var sc = S.boot.scan; return s === sc.OK || s === sc.OK_DOC ? 'ok' : s === sc.PENDING ? 'pend' : 'bad'; }
+/* 30 ก.ย. 69 "ตรงตามใบ" แบบไม่ต้องรอ: ช่องเป็นสีเขียวทันที แล้วระบบบันทึกเบื้องหลัง · ไปใบถัดไปได้เลย */
 function enConfirm(ids, btn){
-  if (!ids.length) return;
-  api('confirmDuties', { ids: ids }, { btn: btn && btn.tagName === 'BUTTON' ? btn : null }).then(function(r){ notify('ยืนยันแล้ว ' + r.confirmed + ' รายการ' + (r.skipped ? ' (ข้ามวันที่ยังไม่ถึง ' + r.skipped + ')' : '')); loadEntry(); }).catch(function(){});
+  if (!ids.length || !EN.data) return;
+  var snap = JSON.stringify(EN.data), set = {}; ids.forEach(function(id){ set[id] = 1; });
+  EN.data.items.forEach(function(x){ if (set[x.id] && x.date <= EN.data.today) { x.workStatus = 'WORKED'; x.red = false; x._saving = true; } });
+  EN.data.summary.worked += ids.length; EN.data.summary.pending = Math.max(0, EN.data.summary.pending - ids.length);
+  EN.saving = (EN.saving || 0) + 1; savingChip(1); drawEntry();
+  api('confirmDuties', { ids: ids }).then(function(r){
+    EN.saving--; savingChip(-1, true);
+    notify('ยืนยันแล้ว ' + r.confirmed + ' รายการ' + (r.skipped ? ' (ข้ามวันที่ยังไม่ถึง ' + r.skipped + ')' : ''));
+    if (!EN.saving) loadEntry();
+  }).catch(function(){ EN.saving--; savingChip(-1, false); EN.data = JSON.parse(snap); drawEntry(); });
 }
 function enAdd(pid, date, s){
   var P = posOf(pid) || {};
@@ -382,7 +417,7 @@ function openDuty(id){
     (x.attachIds.length ? '<div class="mt-2">' + x.attachIds.map(function(a, i){ return '<button class="btn btn-sm btn-ghost me-1" onclick="viewAttach(\'' + a + '\',' + (ed ? 'function(){loadEntry()}' : 'null') + ')"><i class="bi bi-paperclip"></i> ใบลืมสแกน ' + (i + 1) + '</button>'; }).join('') + '</div>' : '');
   if (ed) {
     body += '<hr><div class="row g-2"><div class="col-sm-6"><label class="form-label" for="ddTime">เวลา</label><select class="form-select" id="ddTime">' + times.map(function(t){ return '<option' + (t === x.timeIn + '-' + x.timeOut ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '<option value="_">กำหนดเอง…</option></select></div>' +
-      (x.slot === 'D' && !x.partTime || x.payMode ? '<div class="col-sm-6"><label class="form-label" for="ddPay">การจ่ายเวรนี้</label><select class="form-select" id="ddPay"><option value="">ตามข้อมูลบุคลากร</option><option value="HOURLY"' + (x.payMode === 'HOURLY' ? ' selected' : '') + '>จ่ายรายชั่วโมง</option><option value="FULLTIME"' + (x.payMode === 'FULLTIME' ? ' selected' : '') + '>Full Time (ประจำศูนย์)</option></select></div>' : '') + '</div>';
+      ((x.slot === 'D' && !x.partTime || x.payMode) && has('ADMIN') ? '<div class="col-sm-6"><label class="form-label" for="ddPay">การจ่ายเวรนี้</label><select class="form-select" id="ddPay"><option value="">ตามข้อมูลบุคลากร</option><option value="HOURLY"' + (x.payMode === 'HOURLY' ? ' selected' : '') + '>จ่ายรายชั่วโมง</option><option value="FULLTIME"' + (x.payMode === 'FULLTIME' ? ' selected' : '') + '>Full Time (ประจำศูนย์)</option></select></div>' : '') + '</div>';
     if (early) body += '<div class="early-box"><b><i class="bi bi-alarm"></i> สแกนออกก่อนเวลา (' + esc(x.scanOut) + ')</b><div class="seg mt-2" id="ddEarly"><button data-v="CUT"' + (x.earlyDecision === 'CUT' ? ' class="on"' : '') + '>ไม่จ่ายช่วงนี้</button><button data-v="PAY"' + (x.earlyDecision === 'PAY' ? ' class="on"' : '') + '>จ่ายเต็ม + เหตุผล</button><button data-v=""' + (!x.earlyDecision ? ' class="on"' : '') + '>ยังไม่ตัดสิน</button></div>' +
       '<textarea class="form-control mt-2" id="ddEarlyR" rows="2" placeholder="เหตุผล (บังคับ)">' + esc(x.earlyReason || '') + '</textarea></div>';
   }
@@ -454,7 +489,7 @@ PAGES.followup = function(){
   loadFu();
 };
 var FU = null;
-function loadFu(){ api('getFollowup', { ym: $('fuYm').value, branchId: $('fuBr').value }).then(function(r){ FU = r; drawFu(); }).catch(function(){}); }
+function loadFu(){ var k = $('fuYm').value + '|' + $('fuBr').value; apiView('getFollowup', { ym: $('fuYm').value, branchId: $('fuBr').value }, function(r){ if (!$('fuYm') || $('fuYm').value + '|' + $('fuBr').value !== k) return; FU = r; drawFu(); }).catch(function(){}); }
 function drawFu(){
   var r = FU; if (!r || !$('fuBody')) return;
   var types = Object.keys(r.counts).sort(function(a, b){ return (flagLevel(a) === 'R' ? 0 : 1) - (flagLevel(b) === 'R' ? 0 : 1) || r.counts[b] - r.counts[a]; });
