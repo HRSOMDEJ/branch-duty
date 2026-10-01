@@ -157,7 +157,7 @@ function textImage(lines, width, opt){
   var g = c.getContext('2d'); g.scale(scale, scale);
   g.fillStyle = opt.bg || '#ffffff'; g.fillRect(0, 0, width, lines.length * lh + pad * 2);
   lines.forEach(function(l, i){
-    g.font = (l.bold ? '700 ' : '400 ') + (l.size || 13) + "px 'IBM Plex Sans Thai', 'Sarabun', sans-serif";
+    g.font = (l.bold ? '700 ' : '400 ') + (l.size || 13) + "px 'Sarabun', 'IBM Plex Sans Thai', sans-serif";
     g.fillStyle = l.color || '#111827'; g.textBaseline = 'middle';
     g.textAlign = l.align || 'left';
     g.fillText(l.text, l.align === 'right' ? width - pad : l.align === 'center' ? width / 2 : pad, pad + i * lh + lh / 2);
@@ -176,46 +176,72 @@ function imageToJpeg(dataUrl){
 function b64ToBytes(b64){ var bin = atob(b64), a = new Uint8Array(bin.length); for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i); return a; }
 function bytesToB64(bytes){ var s = '', ch = 0x8000; for (var i = 0; i < bytes.length; i += ch) s += String.fromCharCode.apply(null, bytes.subarray(i, i + ch)); return btoa(s); }
 
-function printAttachments(ym, bid){
-  var posLabel = bid === 'all' ? 'ทุกศูนย์' : 'ศูนย์' + brName(bid);
-  api('listPrintAttachments', { ym: ym, branchIds: [bid] }, { block: 'กำลังรวบรวมรายการเอกสาร…' }).then(function(r){
+/** ชุด 07: ใบลืมสแกนรวมเล่ม · brs/pids = ศูนย์/ตำแหน่งที่เลือก (ตัวเลือกเดียวกับเอกสารอื่น)
+ *  เรียง ศูนย์ → ตำแหน่ง → วันที่ → ชื่อ · แต่ละตำแหน่งมีหน้าสรุปนำ */
+function printAttachments(ym, brs, pids, label){
+  if (typeof brs === 'string') brs = brs === 'all' ? myBrs() : [brs];
+  var posLabel = label || (brs.length > 1 ? 'ทุกศูนย์' : 'ศูนย์' + brName(brs[0]));
+  api('listPrintAttachments', { ym: ym, branchIds: brs, positionIds: pids || [] }, { block: 'กำลังรวบรวมรายการเอกสาร…' }).then(function(r){ return ensureDocFont().then(function(){ return r; }); }).then(function(r){
     if (!r.files.length) return alertBox('ไม่พบใบลืมสแกน', 'เดือน ' + thYm(ym) + ' (' + posLabel + ') ยังไม่มีไฟล์แนบใบลืมสแกน', 'info');
     var n = r.files.length, done = 0;
     Swal.fire({ title: 'กำลังรวมเอกสาร', html: '<div id="pmTxt" class="small-muted">เตรียมเครื่องมือ…</div><div class="progress mt-2" style="height:8px"><div id="pmBar" class="progress-bar" style="width:0%"></div></div>', allowOutsideClick: false, showConfirmButton: false });
     var step = function(t){ done++; $('pmTxt').textContent = t + ' (' + done + '/' + n + ')'; $('pmBar').style.width = Math.round(done / n * 100) + '%'; };
     var PL, doc, A4 = [595.28, 841.89], fails = [];
+    // กลุ่ม ศูนย์ × ตำแหน่ง
+    var groups = [], gk = {};
+    r.files.forEach(function(f){ var k = f.branchId + '|' + f.positionId; if (!gk[k]) { gk[k] = { branch: f.branch, positionName: f.positionName, files: [] }; groups.push(gk[k]); } gk[k].files.push(f); });
+    var drawText = function(pg, lines, top, width){ var ti = textImage(lines, 900, { lh: 24 }); return doc.embedPng(ti.data).then(function(img){ var w = width || (A4[0] - 60), h = w * ti.h / ti.w; pg.drawImage(img, { x: 30, y: top - h, width: w, height: h }); return h; }); };
     loadScript('https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js').then(function(){
       PL = window.PDFLib;
       return PL.PDFDocument.create();
     }).then(function(d){
       doc = d;
-      // ปก
+      // ปก + สารบัญกลุ่ม
       var cover = doc.addPage(A4);
-      var ci = textImage([{ text: 'ใบลืมสแกน / เอกสารประกอบการลงเวลา', bold: true, size: 20, align: 'center' }, { text: 'รอบเดือน ' + thYm(ym) + ' · ' + posLabel, size: 15, align: 'center' },
-        { text: 'จำนวน ' + n + ' ไฟล์', size: 13, align: 'center', color: '#555' }, { text: '', size: 10 }, { text: r.foot, size: 10, align: 'center', color: '#666' }], 700, { lh: 34 });
-      return doc.embedPng(ci.data).then(function(img){ var w = 520, h = w * ci.h / ci.w; cover.drawImage(img, { x: (A4[0] - w) / 2, y: A4[1] - 220 - h, width: w, height: h }); });
+      var lines = [{ text: 'ใบลืมสแกน / เอกสารประกอบการลงเวลา', bold: true, size: 20, align: 'center' }, { text: 'รอบเดือน ' + thYm(ym) + ' · ' + posLabel, size: 15, align: 'center' },
+        { text: 'จำนวน ' + n + ' ไฟล์ · ' + groups.length + ' ตำแหน่ง', size: 13, align: 'center', color: '#555' }, { text: '', size: 8 }];
+      groups.forEach(function(g, i){ lines.push({ text: (i + 1) + '. ศูนย์' + g.branch + ' · ' + g.positionName + ' — ' + g.files.length + ' ไฟล์', size: 13 }); });
+      lines.push({ text: '', size: 8 }, { text: r.foot, size: 10, align: 'center', color: '#666' });
+      var ci = textImage(lines.slice(0, 40), 700, { lh: 30 });
+      return doc.embedPng(ci.data).then(function(img){ var w = 520, h = Math.min(A4[1] - 160, w * ci.h / ci.w); cover.drawImage(img, { x: (A4[0] - w) / 2, y: A4[1] - 120 - h, width: w, height: h }); });
     }).then(function(){
-      var chain = Promise.resolve();
-      r.files.forEach(function(f, idx){
+      var chain = Promise.resolve(), idx = 0;
+      groups.forEach(function(g){
+        // หน้าสรุปนำของตำแหน่ง (35 รายการ/หน้า)
         chain = chain.then(function(){
-          return api('getAttachment', { id: f.id }, { quiet: true }).then(function(att){
-            var head = textImage([{ text: (idx + 1) + '. ศูนย์' + f.branch + ' · ' + f.positionName + ' · ' + TH_DF[dowOf(f.date)] + ' ' + thDateFull(f.date) + (f.sheetNo ? ' · ใบที่ ' + f.sheetNo : ''), bold: true, size: 14 },
-              { text: f.empCode + ' ' + f.name + ' · เวลา ' + f.timeIn + '–' + f.timeOut + ' น. · ผลสแกน: ' + f.scanStatus, size: 12, color: '#374151' }], 900, { bg: '#f3f4f6', lh: 24 });
-            return doc.embedPng(head.data).then(function(hImg){
-              var hw = A4[0] - 40, hh = hw * head.h / head.w;
-              var addPageWith = function(drawFn){ var pg = doc.addPage(A4); pg.drawImage(hImg, { x: 20, y: A4[1] - 20 - hh, width: hw, height: hh }); drawFn(pg, A4[1] - 30 - hh); };
-              if (att.mimeType === 'application/pdf') {
-                return PL.PDFDocument.load(b64ToBytes(att.data), { ignoreEncryption: true }).then(function(src){
-                  return doc.embedPages(src.getPages()).then(function(eps){
-                    eps.forEach(function(ep){ addPageWith(function(pg, top){ var k = Math.min((A4[0] - 40) / ep.width, (top - 30) / ep.height); pg.drawPage(ep, { x: (A4[0] - ep.width * k) / 2, y: top - ep.height * k, xScale: k, yScale: k }); }); });
-                  });
-                });
-              }
-              return imageToJpeg('data:' + att.mimeType + ';base64,' + att.data).then(function(j){
-                return doc.embedJpg(j.data).then(function(img){ addPageWith(function(pg, top){ var k = Math.min((A4[0] - 40) / j.w, (top - 30) / j.h); pg.drawImage(img, { x: (A4[0] - j.w * k) / 2, y: top - j.h * k, width: j.w * k, height: j.h * k }); }); });
-              });
+          var per = 32, pages = Math.ceil(g.files.length / per), c2 = Promise.resolve();
+          for (var pi = 0; pi < pages; pi++) (function(pi){
+            c2 = c2.then(function(){
+              var pg = doc.addPage(A4);
+              var L = [{ text: 'สรุปใบลืมสแกน · ศูนย์' + g.branch + ' · ' + g.positionName + (pages > 1 ? ' (' + (pi + 1) + '/' + pages + ')' : ''), bold: true, size: 15 }, { text: 'รอบเดือน ' + thYm(ym) + ' · ' + g.files.length + ' ไฟล์', size: 12, color: '#555' }, { text: ' ', size: 6 }];
+              g.files.slice(pi * per, pi * per + per).forEach(function(f, j){ var no = pi * per + j + 1; L.push({ text: no + '. ' + TH_D[dowOf(f.date)] + ' ' + thDateNum(f.date) + ' · ' + slotL(f.slot || 'D').name + ' ' + f.timeIn + '–' + f.timeOut + ' · ' + f.empCode + ' ' + f.name + (f.sheetNo ? ' · ใบที่ ' + f.sheetNo : '') + ' · ' + (f.scanStatus || ''), size: 11.5 }); });
+              return drawText(pg, L, A4[1] - 40);
             });
-          }).catch(function(e){ fails.push(f.name + ' ' + thDate(f.date) + ': ' + (e.message || e)); }).then(function(){ step('รวมไฟล์ ' + f.name); });
+          })(pi);
+          return c2;
+        });
+        g.files.forEach(function(f){
+          var no = ++idx;
+          chain = chain.then(function(){
+            return api('getAttachment', { id: f.id }, { quiet: true }).then(function(att){
+              var head = textImage([{ text: no + '. ศูนย์' + f.branch + ' · ' + f.positionName + ' · ' + TH_DF[dowOf(f.date)] + ' ' + thDateNum(f.date) + (f.sheetNo ? ' · ใบที่ ' + f.sheetNo : ''), bold: true, size: 14 },
+                { text: f.empCode + ' ' + f.name + ' · เวลา ' + f.timeIn + '–' + f.timeOut + ' น. · ผลสแกน: ' + f.scanStatus, size: 12, color: '#374151' }], 900, { bg: '#f3f4f6', lh: 24 });
+              return doc.embedPng(head.data).then(function(hImg){
+                var hw = A4[0] - 40, hh = hw * head.h / head.w;
+                var addPageWith = function(drawFn){ var pg = doc.addPage(A4); pg.drawImage(hImg, { x: 20, y: A4[1] - 20 - hh, width: hw, height: hh }); drawFn(pg, A4[1] - 30 - hh); };
+                if (att.mimeType === 'application/pdf') {
+                  return PL.PDFDocument.load(b64ToBytes(att.data), { ignoreEncryption: true }).then(function(src){
+                    return doc.embedPages(src.getPages()).then(function(eps){
+                      eps.forEach(function(ep){ addPageWith(function(pg, top){ var k = Math.min((A4[0] - 40) / ep.width, (top - 30) / ep.height); pg.drawPage(ep, { x: (A4[0] - ep.width * k) / 2, y: top - ep.height * k, xScale: k, yScale: k }); }); });
+                    });
+                  });
+                }
+                return imageToJpeg('data:' + att.mimeType + ';base64,' + att.data).then(function(j){
+                  return doc.embedJpg(j.data).then(function(img){ addPageWith(function(pg, top){ var k = Math.min((A4[0] - 40) / j.w, (top - 30) / j.h); pg.drawImage(img, { x: (A4[0] - j.w * k) / 2, y: top - j.h * k, width: j.w * k, height: j.h * k }); }); });
+                });
+              });
+            }).catch(function(e){ fails.push(f.name + ' ' + thDate(f.date) + ': ' + (e.message || e)); }).then(function(){ step('รวมไฟล์ ' + f.name); });
+          });
         });
       });
       return chain;
@@ -228,7 +254,7 @@ function printAttachments(ym, bid){
       });
     }).then(function(){ return doc.save(); }).then(function(bytes){
       Swal.close();
-      var name = 'ใบลืมสแกน_' + (bid === 'all' ? 'ทุกศูนย์' : brName(bid)) + '_' + thYm(ym).replace(' ', '_') + '_' + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
+      var name = 'ใบลืมสแกน_' + posLabel.replace(/[\s:·,]+/g, '_').slice(0, 60) + '_' + thYm(ym).replace(' ', '_') + '_' + new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '');
       // 30 ก.ย. 69: เปิดเล่มให้ดู/พิมพ์ทันที (กด "เปิดในแท็บใหม่" แล้วสั่งพิมพ์ หรือ "ดาวน์โหลด") · ไม่เก็บสำเนาใน Drive
       fileViewer({ fileName: name + '.pdf', mimeType: 'application/pdf', data: bytesToB64(bytes) });
       if (fails.length) alertBox('รวมได้ ' + (n - fails.length) + ' ไฟล์ · รวมไม่ได้ ' + fails.length + ' ไฟล์', 'ไฟล์ที่รวมไม่ได้ (เปิดดูได้ในระบบ):\n' + fails.join('\n'), 'warning');
@@ -267,11 +293,11 @@ function vwApply(){ var im = $('vwImg'); if (!im) return; var v = window._vw; im
  * ขอเลขอ้างอิงจากเซิร์ฟเวอร์ (บันทึกลงประวัติการใช้งาน) แล้วเปิดหน้าต่างพิมพ์ของเบราว์เซอร์
  */
 function printReport(o){
-  return api('logPrint', { title: o.title, filters: o.filters, count: o.count || 0, kind: o.kind || '' }, { block: 'กำลังเตรียมเอกสารสำหรับพิมพ์…' }).then(function(m){ return uiIdle().then(function(){ return m; }); }).then(function(m){
+  return api('logPrint', { title: o.title, filters: o.filters, count: o.count || 0, kind: o.kind || '' }, { block: 'กำลังเตรียมเอกสารสำหรับพิมพ์…' }).then(function(m){ return ensureDocFont().then(uiIdle).then(function(){ return m; }); }).then(function(m){
     var b = BRAND || {};
     var root = $('printRoot');
     root.className = o.portrait ? 'portrait' : 'landscape';
-    $('printPage').textContent = '@page{size:A4 ' + (o.portrait ? 'portrait' : 'landscape') + ';margin:10mm 10mm 14mm 10mm;@bottom-right{content:"หน้า " counter(page) " / " counter(pages);font:9pt "IBM Plex Sans Thai",sans-serif;color:#555}@bottom-left{content:"' + m.ref + '";font:9pt "IBM Plex Sans Thai",sans-serif;color:#555}}';
+    $('printPage').textContent = '@page{size:A4 ' + (o.portrait ? 'portrait' : 'landscape') + ';margin:10mm 10mm 14mm 10mm;@bottom-right{content:"หน้า " counter(page) " / " counter(pages);font:9pt Sarabun,"IBM Plex Sans Thai",sans-serif;color:#555}@bottom-left{content:"' + m.ref + '";font:9pt Sarabun,"IBM Plex Sans Thai",sans-serif;color:#555}}';
     root.innerHTML = '<div class="pr-doc">' +
       '<header class="pr-head">' + (b.logo ? '<img class="pr-logo" src="' + b.logo + '" alt="">' : '') +
         '<div class="pr-org"><b>' + esc(m.org) + '</b><span>' + esc(m.system) + '</span></div>' +
@@ -333,6 +359,11 @@ function printDoc(o){
     root.className = 'docs ' + o.orient + ' measuring';
     $('printPage').textContent = '@page{size:A4 ' + o.orient + ';margin:8mm}';
     root.innerHTML = o.pages.map(function(h){ return '<section class="dp' + (o.flow ? ' flow' : '') + '"><div class="dp-in">' + h + '</div></section>'; }).join('');
+    // ชุด 07: ข้อความที่ต้องอยู่บรรทัดเดียว (ชื่อ รหัส วันที่ ช่องลงนาม) ยาวเกินช่อง → ลดขนาดอักษรทีละน้อยจนพอดี (ไม่ตัด/ไม่ขึ้นบรรทัดใหม่)
+    $$('.fit', root).forEach(function(el){
+      var fs = parseFloat(getComputedStyle(el).fontSize) || 14, min = fs * 0.62, n = 0;
+      while (el.scrollWidth > el.clientWidth + 0.5 && fs > min && n++ < 20) { fs -= 0.5; el.style.fontSize = fs + 'px'; }
+    });
     $$('.dp', root).forEach(function(sec){
       // ย่อให้พอดีหน้า (flow = พอดีความกว้าง ยาวต่อหลายหน้าได้) · ใช้ zoom (ไม่ใช้ transform) เพื่อให้เครื่องพิมพ์ตัดหน้าตามขนาดที่ย่อแล้วจริง
       var inn = sec.firstChild, W = sec.clientWidth, H = o.flow ? 1e9 : sec.clientHeight, w = inn.scrollWidth, h = inn.scrollHeight;
@@ -417,13 +448,13 @@ function xlsxBlob(sheets){
 
 /* ---------- ตัวจัดหน้าเอกสารของระบบ ศ.สาขา ---------- */
 function docSignBR(L, R, dots){
-  var blk = function(x){ return x ? '<div class="ds-b"><div>' + esc(x.label || '') + '</div><div class="ds-gap"></div><div>' + '.'.repeat(dots || 68) + '</div><div>' + esc(x.name || '') + '</div><div>' + esc(x.title || '') + '</div></div>' : '<div class="ds-b"></div>'; };
+  var blk = function(x){ return x ? '<div class="ds-b"><div class="fit">' + esc(x.label || '') + '</div><div class="ds-gap"></div><div class="fit">' + '.'.repeat(dots || 68) + '</div><div class="fit">' + esc(x.name || '') + '</div><div class="fit">' + esc(x.title || '') + '</div></div>' : '<div class="ds-b"></div>'; };
   return '<div class="ds">' + blk(L) + blk(R) + '</div>';
 }
 /** ตารางรายวัน 1 หน้า (ตารางชั่วโมง / ตารางเวร / ค่าอาหาร) รูปแบบเดียวกับเอกสารเดิม */
 function docGridHtml(m, foot, page, pages){
   var nD = m.dates.length, n = m.rows.length;
-  var wNo = 28, wCode = 64, wName = 168, wPos = 124, wDay = m.dayW || 30;
+  var wNo = 36, wCode = 70, wName = 176, wPos = 124, wDay = m.dayW || 30;   // ชุด 07: รหัสไม่ถูกตัด
   var totalW = wNo + wCode + wName + wPos + wDay * nD + m.tail.reduce(function(a, t){ return a + t.w; }, 0);
   var k = Math.max(1, totalW / 1065), big = n <= 25;
   var rowH = Math.max(20, Math.min(46, Math.floor((726 * k - 332) / Math.max(1, n))));
@@ -436,7 +467,7 @@ function docGridHtml(m, foot, page, pages){
     '<thead><tr><th rowspan="2">ลำดับ</th><th rowspan="2">รหัสเจ้าหน้าที่</th><th rowspan="2">ชื่อ-นามสกุล</th><th rowspan="2">ตำแหน่ง</th>' + m.dates.map(function(x){ return '<th' + bg(x) + '>' + x.d + '</th>'; }).join('') + m.tail.map(function(t){ return '<th rowspan="2">' + esc(t.t) + '</th>'; }).join('') + '</tr><tr>' +
     m.dates.map(function(x){ return '<th' + bg(x) + '>' + esc(x.dow) + '</th>'; }).join('') + '</tr></thead><tbody>';
   m.rows.forEach(function(r){
-    h += '<tr style="height:' + rowH + 'px"><td class="c">' + r.no + '</td><td class="c">' + esc(r.code) + '</td><td>' + esc(r.name) + '</td><td>' + esc(r.pos) + '</td>' +
+    h += '<tr style="height:' + rowH + 'px"><td class="c">' + r.no + '</td><td class="c fit">' + esc(r.code) + '</td><td class="fit">' + esc(r.name) + '</td><td class="fit">' + esc(r.pos) + '</td>' +
       r.days.map(function(v, i){ return '<td class="d" style="font-size:' + fDay + 'pt' + (m.dates[i].bg ? ';background:' + m.dates[i].bg : '') + '">' + dayV(v) + '</td>'; }).join('') +
       r.tail.map(function(v, i){ return '<td class="' + (m.tail[i].f === 'money' ? 'a' : 't') + '" style="font-size:' + fSum + 'pt">' + fv(v, m.tail[i].f) + '</td>'; }).join('') + '</tr>';
   });
@@ -448,26 +479,26 @@ function docGridHtml(m, foot, page, pages){
 }
 /** ใบบันทึกเวลาการปฏิบัติงาน FM-HRM-032/01 (A4 แนวตั้ง · 2 ช่วง) */
 function docSign32Html(pg, foot){
-  var W = [62, 70, 62, 128, 86, 62, 128, 86];
+  var W = [56, 82, 62, 152, 92, 62, 152, 92];   // ชุด 07: วันที่เต็ม 1/9/2569 · ชื่ออยู่บรรทัดเดียว
   var h = '<div class="d32"><div class="d32-no">' + pg.no + '</div><div class="d32-t1">' + esc(pg.t1) + '</div><div class="d32-t2">' + esc(pg.t2) + '</div>' +
     '<table class="d32-t"><colgroup>' + W.map(function(w){ return '<col style="width:' + w + 'px">'; }).join('') + '</colgroup><thead><tr><th rowspan="2">วัน</th><th rowspan="2">วันที่</th><th colspan="3" class="g">' + esc(pg.dLabel) + '</th><th colspan="3" class="g">' + esc(pg.eLabel) + '</th></tr>' +
     '<tr><th class="gl">รหัสเจ้าหน้าที่</th><th>ชื่อ-นามสกุล</th><th class="gr">ลงลายมือชื่อ</th><th>รหัสเจ้าหน้าที่</th><th>ชื่อ-นามสกุล</th><th class="gr">ลงลายมือชื่อ</th></tr></thead><tbody>';
   pg.rows.forEach(function(r){
     var b = r[8] ? ' style="background:' + r[8] + '"' : '';
-    var cell = function(code, nm, dark){ return dark ? '<td class="dk gl"></td><td class="dk nm"></td><td class="dk gr"></td>' : '<td class="c gl"' + b + '>' + esc(code) + '</td><td class="nm"' + b + '>' + esc(nm) + '</td><td class="gr"' + b + '></td>'; };
-    var cellC = function(code, nm, dark){ return dark ? '<td class="dk"></td><td class="dk nm"></td><td class="dk gr"></td>' : '<td class="c"' + b + '>' + esc(code) + '</td><td class="nm"' + b + '>' + esc(nm) + '</td><td class="gr"' + b + '></td>'; };
-    h += '<tr><td class="c"' + b + '>' + esc(r[0]) + '</td><td class="c"' + b + '>' + esc(r[1]) + '</td>' + cell(r[2], r[3], r[4]) + cellC(r[5], r[6], r[7]) + '</tr>';
+    var cell = function(code, nm, dark){ return dark ? '<td class="dk gl"></td><td class="dk nm"></td><td class="dk gr"></td>' : '<td class="c gl fit"' + b + '>' + esc(code) + '</td><td class="nm fit"' + b + '>' + esc(nm) + '</td><td class="gr"' + b + '></td>'; };
+    var cellC = function(code, nm, dark){ return dark ? '<td class="dk"></td><td class="dk nm"></td><td class="dk gr"></td>' : '<td class="c fit"' + b + '>' + esc(code) + '</td><td class="nm fit"' + b + '>' + esc(nm) + '</td><td class="gr"' + b + '></td>'; };
+    h += '<tr><td class="c fit"' + b + '>' + esc(r[0]) + '</td><td class="c fit"' + b + '>' + esc(r[1]) + '</td>' + cell(r[2], r[3], r[4]) + cellC(r[5], r[6], r[7]) + '</tr>';
   });
   return h + '</tbody></table><div class="d32-note">ช่องสีเทาทึบ = ปิดศูนย์ หรือไม่มีกรอบเวรสำหรับใบนี้ (ห้ามลงชื่อ) · บุคลากรลงลายมือชื่อตามเวลาที่ปฏิบัติงานจริง</div>' +
     docSignBR(pg.left, pg.right, 50) + '<div class="d32-foot"><i>' + esc(pg.blank ? '' : foot) + '</i></div><div class="d32-pg">' + esc(pg.page) + '</div></div>';
 }
 /** สรุปยอดเบิกรายศูนย์ (A4 แนวตั้ง) */
 function docSummaryHtml(pg, foot){
-  var W = [80, 330, 190, 70, 70, 60, 120];
+  var W = [72, 392, 176, 58, 62, 56, 104];   // ชุด 07: รายการ/ตำแหน่งอยู่บรรทัดเดียว
   var h = '<div class="dsm"><div class="dsm-h">' + esc(pg.head) + '</div><table class="dsm-t"><colgroup>' + W.map(function(w){ return '<col style="width:' + w + 'px">'; }).join('') + '</colgroup><tbody>';
   pg.sections.forEach(function(s){
     h += '<tr class="br"><td colspan="7">' + esc(s.title) + '</td></tr><tr class="hd"><td>รหัสรายได้</td><td>รายการ</td><td>ตำแหน่ง</td><td>จำนวนคน</td><td>จำนวน</td><td>หน่วย</td><td>จำนวนเงิน (บาท)</td></tr>';
-    s.rows.forEach(function(r){ h += '<tr><td>' + esc(r[0]) + '</td><td>' + esc(r[1]) + '</td><td>' + esc(r[2]) + '</td><td class="n">' + docNum(r[3]) + '</td><td class="n">' + docNum(r[4]) + '</td><td>' + esc(r[5]) + '</td><td class="n">' + docNum(r[6], 2) + '</td></tr>'; });
+    s.rows.forEach(function(r){ h += '<tr><td class="fit">' + esc(r[0]) + '</td><td class="fit">' + esc(r[1]) + '</td><td class="fit">' + esc(r[2]) + '</td><td class="n">' + docNum(r[3]) + '</td><td class="n">' + docNum(r[4]) + '</td><td>' + esc(r[5]) + '</td><td class="n">' + docNum(r[6], 2) + '</td></tr>'; });
     h += '<tr class="sum"><td></td><td>รวม ' + esc(s.name) + '</td><td></td><td></td><td></td><td></td><td class="n">' + docNum(s.sub, 2) + '</td></tr><tr class="sp"><td colspan="7"></td></tr>';
   });
   return h + '<tr class="grand"><td></td><td>รวมทุกศูนย์</td><td></td><td></td><td></td><td></td><td class="n">' + docNum(pg.grand, 2) + '</td></tr></tbody></table><div class="dsm-foot"><i>' + esc(foot) + '</i></div></div>';
@@ -685,14 +716,51 @@ function timeLegend(P){
   return '<span class="time-lg">' + f('D', P.day) + f('E', P.eve) + '</span>';
 }
 function cellText(slots){ return ['D', 'E'].filter(function(k){ return slots.indexOf(k) >= 0; }).map(function(k){ return slotL(k).s; }).join(''); }
+/** แยกข้อความในช่องเป็นรายการตัวย่อ [{slot, raw}] (null = รูปแบบไม่ถูกต้อง) */
+function cellToks(v){
+  var m = slotMap(), s = String(v || '').replace(/\s+/g, ''), out = [], i = 0;
+  while (i < s.length) {
+    var ch = s.charAt(i), k = m[ch] || m[ch.toUpperCase()]; if (!k) return null;
+    var j = i + 1; if (s.charAt(j) === '*') j++; else while (j < s.length && /\d/.test(s.charAt(j))) j++;
+    out.push({ slot: k, raw: s.slice(i, j) }); i = j;
+  }
+  return out;
+}
+var SG_UID = 0, SG_LINES = {};
+/**
+ * ตารางแบบ Google Sheet (แถว = บุคคล×ตำแหน่ง · คอลัมน์ = วันที่)
+ * cfg: {host, dates, rows, quota, positions, canAdd, onAddRow, onSave, lineKey}
+ * ชุด 07: เลือกดูทีละใบเซ็นชื่อได้ (ทั้งหมด | ใบ 1 | ใบ 2 …) · ช่อง/แถวที่ไม่อยู่ในใบที่เลือกถูกซ่อน · เพิ่มเวรขณะเลือก 1 ใบ → ลงใบนั้น
+ */
 function SheetGrid(cfg){
-  var G = { cfg: cfg, dirty: {} };
+  var G = { cfg: cfg, dirty: {}, uid: 'g' + (++SG_UID) };
   var host = typeof cfg.host === 'string' ? $(cfg.host) : cfg.host;
-  var dates = cfg.dates;
+  var dates = cfg.dates, U = G.uid;
+  var lk = function(pid){ return (cfg.lineKey || '') + '|' + pid; };
+  var selOf = function(pid){ return SG_LINES[lk(pid)] || []; };
+  var lnOf = function(r, d, slot){ var o = r.orig && r.orig[d] ? cellToks(r.orig[d]) : null; if (!o || !o.some(function(t){ return t.slot === slot; })) return 0; return (r.ln && r.ln[d] && r.ln[d][slot]) || 0; };
+  /** ส่วนของช่องที่แสดงตามใบที่เลือก (เวรใหม่ที่ยังไม่บันทึกแสดงเสมอ) */
+  var vis = function(r, d){
+    var sel = selOf(r.pid), v = r.cells[d] || '';
+    if (!sel.length) return v;
+    var t = cellToks(v); if (!t) return v;
+    return t.filter(function(x){ var l = lnOf(r, d, x.slot); return !l || sel.indexOf(l) >= 0; }).map(function(x){ return x.raw; }).join('');
+  };
+  var hiddenToks = function(r, d){
+    var sel = selOf(r.pid); if (!sel.length) return [];
+    var t = cellToks(r.cells[d] || '') || [];
+    return t.filter(function(x){ var l = lnOf(r, d, x.slot); return l && sel.indexOf(l) < 0; });
+  };
+  var lnTitle = function(r, d){ var ln = r.ln && r.ln[d]; if (!ln) return ''; return ' · ' + ['D', 'E'].filter(function(s){ return ln[s]; }).map(function(s){ return slotL(s).s + ' ใบที่ ' + ln[s]; }).join(' · '); };
+  var rowShown = function(r){
+    var sel = selOf(r.pid); if (!sel.length || r._show) return true;
+    if (Object.keys(G.dirty).some(function(k){ return G.dirty[k].row === r; })) return true;
+    return dates.some(function(x){ return !!vis(r, x.d); });
+  };
   G.render = function(){
     var anyEdit = cfg.rows.some(function(r){ return r.editable; }) || cfg.canAdd;
-    var h = '<div class="sg-bar">' + (anyEdit ? '<span class="small-muted"><i class="bi bi-keyboard"></i> พิมพ์ <b>' + esc(slotL('D').s) + '</b> = ' + esc(slotL('D').name) + ' · <b>' + esc(slotL('E').s) + '</b> = ' + esc(slotL('E').name) + ' · <b>' + esc(slotL('D').s + slotL('E').s) + '</b> = ทั้งวัน · <b>' + esc(slotL('D').s) + '2</b> = เวลามาตรฐานแบบที่ 2 · ลบช่องให้ว่าง = ยกเลิกเวร · วางจาก Excel ได้</span>' : '<span class="small-muted"><i class="bi bi-eye"></i> เปิดดูอย่างเดียว</span>') +
-      '<span class="ms-auto d-flex gap-2 align-items-center"><span class="sg-cnt" id="sgCnt"></span>' + (anyEdit ? '<button class="btn btn-sm btn-ghost" type="button" id="sgUndo" disabled><i class="bi bi-arrow-counterclockwise"></i> ยกเลิกที่แก้</button><button class="btn btn-sm btn-brand" type="button" id="sgSave" disabled><i class="bi bi-save"></i> บันทึกตาราง</button>' : '') + '</span></div>';
+    var h = '<div class="sg-bar">' + (anyEdit ? '<span class="small-muted"><i class="bi bi-keyboard"></i> พิมพ์ <b>' + esc(slotL('D').s) + '</b> = ' + esc(slotL('D').name) + ' · <b>' + esc(slotL('E').s) + '</b> = ' + esc(slotL('E').name) + ' · <b>' + esc(slotL('D').s + slotL('E').s) + '</b> = ทั้งวัน · <b>' + esc(slotL('D').s) + '2</b> = เวลามาตรฐานแบบที่ 2 · ลบช่องให้ว่าง = ยกเลิกเวร · วางจาก Excel ได้</span>' : '<span class="small-muted"><i class="bi bi-eye"></i> เปิดดูอย่างเดียว · เอาเมาส์ชี้ช่องเพื่อดูใบเซ็นชื่อที่</span>') +
+      '<span class="ms-auto d-flex gap-2 align-items-center"><span class="sg-cnt" id="' + U + 'Cnt"></span>' + (anyEdit ? '<button class="btn btn-sm btn-ghost" type="button" id="' + U + 'Undo" disabled><i class="bi bi-arrow-counterclockwise"></i> ยกเลิกที่แก้</button><button class="btn btn-sm btn-brand" type="button" id="' + U + 'Save" disabled><i class="bi bi-save"></i> บันทึกตาราง</button>' : '') + '</span></div>';
     h += '<div class="sg-wrap"><table class="sg"><thead><tr><th class="sg-code">รหัส</th><th class="sg-name">ชื่อ-นามสกุล</th><th class="sg-hp">ตำแหน่ง (HR)</th>' + dates.map(function(x){ return '<th class="' + dk(x.color) + '" title="' + esc(x.note || '') + '"><div>' + x.d + '</div><small>' + TH_D[x.dow] + '</small></th>'; }).join('') + '<th class="sg-tot">รวม</th></tr></thead><tbody>';
     var order = [], byG = {};
     (cfg.positions || []).forEach(function(p){ byG[p.id] = []; order.push(p.id); });
@@ -701,17 +769,25 @@ function SheetGrid(cfg){
       var idx = byG[g], P = (cfg.positions || []).filter(function(p){ return p.id === g; })[0] || { name: posName(g) };
       var q = (cfg.quota || {})[g];
       if (!idx.length && !(q && q.some(function(x){ return x.D || x.E; }))) return;
-      h += '<tr class="sg-g"><td class="sg-code"></td><td class="sg-name" colspan="2"><b>' + esc(posShort(P.name)) + '</b>' + (cfg.onAddRow && cfg.canAdd ? ' <button class="btn btn-sm btn-link py-0" type="button" data-addp="' + g + '"><i class="bi bi-person-plus"></i> เพิ่มบุคลากร</button>' : '') + '</td><td colspan="' + (dates.length + 1) + '" class="sg-tlg">' + (P.day || P.eve ? timeLegend(P) : '') + '</td></tr>';
+      var nL = P.lines || 1, sel = selOf(g);
+      var chips = nL > 1 || sel.length ? '<span class="sg-lines" data-lp="' + g + '"><span class="small-muted">ใบเซ็นชื่อ:</span> <button type="button" class="lchip' + (sel.length ? '' : ' on') + '" data-ln="0">ทั้งหมด</button>' +
+        Array.apply(null, Array(nL)).map(function(_, i){ return '<button type="button" class="lchip' + (sel.indexOf(i + 1) >= 0 ? ' on' : '') + '" data-ln="' + (i + 1) + '">ใบ ' + (i + 1) + '</button>'; }).join('') + '</span>' : '';
+      h += '<tr class="sg-g"><td class="sg-code"></td><td class="sg-name" colspan="2"><b>' + esc(posShort(P.name)) + '</b>' + (cfg.onAddRow && cfg.canAdd ? ' <button class="btn btn-sm btn-link py-0" type="button" data-addp="' + g + '"><i class="bi bi-person-plus"></i> เพิ่มบุคลากร</button>' : '') + '</td><td colspan="' + (dates.length + 1) + '" class="sg-tlg">' + chips + (P.day || P.eve ? timeLegend(P) : '') +
+        (sel.length === 1 && anyEdit ? ' <span class="pill p-info nodot">เวรที่เพิ่มตอนนี้จะลงใบที่ ' + sel[0] + '</span>' : '') + '</td></tr>';
+      var shown = 0;
       idx.forEach(function(i){
         var r = cfg.rows[i];
-        h += '<tr data-row="' + i + '"><td class="sg-code tnum">' + esc(r.empCode) + '</td><td class="sg-name"><b>' + esc(r.name) + '</b>' + (r.partTime ? ' <span class="mini-tag">ชม.</span>' : '') + (r.stopNote ? stopPill(r.stop, !r.stop || r.stop <= todayIso()) : '') + '</td><td class="sg-hp">' + esc(r.hrPos || '') + '</td>';
+        if (!rowShown(r)) return;
+        shown++;
+        h += '<tr data-row="' + i + '"><td class="sg-code tnum">' + esc(r.empCode) + '</td><td class="sg-name"><b>' + esc(r.name) + '</b>' + (r.partTime ? ' <span class="mini-tag">ชม.</span>' : '') + (r.stopNote ? stopPill(r.stop, true) : '') + '</td><td class="sg-hp">' + esc(r.hrPos || '') + '</td>';
         dates.forEach(function(x){
-          var v = r.cells[x.d] || '', pend = r.pend && r.pend[x.d], st = r.st && r.st[x.d], rc = v ? recCls(st) : '';
-          h += '<td class="' + dk(x.color) + (pend ? ' sg-pend' : '') + (rc ? ' ' + rc : '') + '"' + (v ? ' title="' + esc((pend ? 'ลงเอง รอศูนย์ยืนยัน · ' : '') + recTitle(st)) + '"' : '') + '>' + (r.editable && x.color !== 'CLOSED' ? '<input class="sgc" data-r="' + i + '" data-d="' + x.d + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false" aria-label="' + esc(r.name + ' วันที่ ' + x.d) + '">' : '<span class="sgv">' + esc(v) + '</span>') + '</td>';
+          var v = vis(r, x.d), pend = r.pend && r.pend[x.d], st = r.st && r.st[x.d], rc = v ? recCls(st) : '';
+          h += '<td class="' + dk(x.color) + (pend ? ' sg-pend' : '') + (rc ? ' ' + rc : '') + '"' + (v ? ' title="' + esc((pend ? 'ลงเอง รอศูนย์ยืนยัน · ' : '') + recTitle(st) + lnTitle(r, x.d)) + '"' : '') + '>' + (r.editable && x.color !== 'CLOSED' ? '<input class="sgc' + (G.dirty[r.key + '|' + x.d] ? ' dirty' : '') + '" data-r="' + i + '" data-d="' + x.d + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false" aria-label="' + esc(r.name + ' วันที่ ' + x.d) + '">' : '<span class="sgv">' + esc(v) + '</span>') + '</td>';
         });
-        h += '<td class="sg-tot" id="sgt_' + i + '">' + rowTotal(r) + '</td></tr>';
+        h += '<td class="sg-tot" id="' + U + 't_' + i + '">' + rowTotal(r) + '</td></tr>';
       });
-      h += '<tr class="sg-sum" data-g="' + g + '"><td class="sg-code"></td><td class="sg-name" colspan="2">ลงแล้ว / กรอบ (' + esc(slotL('D').s) + ' · ' + esc(slotL('E').s) + ')</td>' + dates.map(function(x, di){ return '<td class="' + dk(x.color) + '" data-sd="' + x.d + '" data-di="' + di + '"></td>'; }).join('') + '<td class="sg-tot" data-st="1"></td></tr>';
+      if (sel.length && !shown) h += '<tr><td colspan="' + (dates.length + 4) + '" class="small-muted text-center">ใบที่เลือกยังไม่มีเวร · กด "เพิ่มบุคลากร" แล้วพิมพ์ตัวย่อ เวรจะลงใบนี้</td></tr>';
+      if (!sel.length) h += '<tr class="sg-sum" data-g="' + g + '"><td class="sg-code"></td><td class="sg-name" colspan="2">ลงแล้ว / กรอบ (' + esc(slotL('D').s) + ' · ' + esc(slotL('E').s) + ')</td>' + dates.map(function(x, di){ return '<td class="' + dk(x.color) + '" data-sd="' + x.d + '" data-di="' + di + '"></td>'; }).join('') + '<td class="sg-tot" data-st="1"></td></tr>';
     });
     if (!order.length) h += '<tr><td colspan="' + (dates.length + 4) + '">' + empty('calendar-x', 'ยังไม่มีผู้ลงเวร') + '</td></tr>';
     h += '</tbody></table></div>';
@@ -739,22 +815,30 @@ function SheetGrid(cfg){
   function rowTotal(r){ var n = 0; Object.keys(r.cells).forEach(function(d){ var p = parseCell(r.cells[d]); if (!p.error) n += p.slots.length; }); return n || ''; }
   function count(){
     var n = Object.keys(G.dirty).length;
-    if ($('sgCnt')) $('sgCnt').innerHTML = n ? '<span class="pill p-warn nodot">แก้ไข ' + n + ' ช่อง</span>' : '';
-    if ($('sgSave')) $('sgSave').disabled = !n;
-    if ($('sgUndo')) $('sgUndo').disabled = !n;
+    if ($(U + 'Cnt')) $(U + 'Cnt').innerHTML = n ? '<span class="pill p-warn nodot">แก้ไข ' + n + ' ช่อง</span>' : '';
+    if ($(U + 'Save')) $(U + 'Save').disabled = !n;
+    if ($(U + 'Undo')) $(U + 'Undo').disabled = !n;
   }
   function setCell(inp, val){
     var r = cfg.rows[+inp.dataset.r], d = +inp.dataset.d;
     inp.value = val;
-    var orig = r.orig ? (r.orig[d] || '') : '';
     var p = parseCell(val);
     inp.classList.toggle('bad', !!p.error);
     inp.title = p.error || '';
+    // ใบที่เลือก: รวมส่วนที่พิมพ์กับเวรของใบอื่นในช่องเดียวกัน (ซ่อนอยู่)
+    var hid = hiddenToks(r, d), full = String(val).trim();
+    if (hid.length && !p.error) {
+      var mine = cellToks(val) || [], clash = hid.filter(function(h){ return mine.some(function(m){ return m.slot === h.slot; }); });
+      if (clash.length) { inp.classList.add('bad'); inp.title = slotL(clash[0].slot).s + ' วันนี้อยู่ในใบอื่นแล้ว (ใบที่ ' + lnOf(r, d, clash[0].slot) + ')'; }
+      var all = mine.concat(hid.filter(function(h){ return !mine.some(function(m){ return m.slot === h.slot; }); }));
+      full = ['D', 'E'].map(function(s){ var t = all.filter(function(x){ return x.slot === s; })[0]; return t ? t.raw : ''; }).join('');
+    }
+    var orig = r.orig ? (r.orig[d] || '') : '';
     var key = r.key + '|' + d;
-    if (String(val).replace(/\s+/g, '') === String(orig).replace(/\s+/g, '')) { delete G.dirty[key]; inp.classList.remove('dirty'); }
-    else { G.dirty[key] = { row: r, d: d, value: String(val).trim() }; inp.classList.add('dirty'); }
-    r.cells[d] = val;
-    var t = $('sgt_' + inp.dataset.r); if (t) t.textContent = rowTotal(r);
+    if (full.replace(/\s+/g, '') === String(orig).replace(/\s+/g, '')) { delete G.dirty[key]; inp.classList.remove('dirty'); }
+    else { G.dirty[key] = { row: r, d: d, value: full, line: selOf(r.pid).length === 1 ? selOf(r.pid)[0] : 0 }; inp.classList.add('dirty'); }
+    r.cells[d] = full;
+    var t = $(U + 't_' + inp.dataset.r); if (t) t.textContent = rowTotal(r);
     count(); sums();
   }
   function bind(){
@@ -763,51 +847,68 @@ function SheetGrid(cfg){
       inp.addEventListener('input', function(){ setCell(inp, inp.value); });
       inp.addEventListener('focus', function(){ inp.select(); var tr = inp.closest('tr'); $$('.sg tr.on', host).forEach(function(x){ x.classList.remove('on'); }); tr.classList.add('on'); });
       inp.addEventListener('keydown', function(e){
-        var r = +inp.dataset.r, d = +inp.dataset.d, go = null;
+        var cells = $$('.sgc', host), r = +inp.dataset.r, d = +inp.dataset.d, go = null;
+        var rowsVis = []; cells.forEach(function(c){ var rr = +c.dataset.r; if (rowsVis.indexOf(rr) < 0) rowsVis.push(rr); });
+        var ri = rowsVis.indexOf(r);
         if (e.key === 'ArrowRight' && (inp.selectionStart === inp.value.length || e.altKey)) go = [r, d + 1];
         else if (e.key === 'ArrowLeft' && (inp.selectionStart === 0 || e.altKey)) go = [r, d - 1];
-        else if (e.key === 'ArrowDown' || e.key === 'Enter') go = [r + 1, d];
-        else if (e.key === 'ArrowUp') go = [r - 1, d];
+        else if (e.key === 'ArrowDown' || e.key === 'Enter') go = [rowsVis[ri + 1], d];
+        else if (e.key === 'ArrowUp') go = [rowsVis[ri - 1], d];
         else if ((e.key === 'Delete' || e.key === 'Backspace') && inp.selectionStart === 0 && inp.selectionEnd === inp.value.length) { e.preventDefault(); setCell(inp, ''); return; }
-        if (go) { var n = host.querySelector('.sgc[data-r="' + go[0] + '"][data-d="' + go[1] + '"]'); if (n) { e.preventDefault(); n.focus(); } }
+        if (go && go[0] !== undefined) { var n = host.querySelector('.sgc[data-r="' + go[0] + '"][data-d="' + go[1] + '"]'); if (n) { e.preventDefault(); n.focus(); } }
       });
       inp.addEventListener('paste', function(e){
         var t = (e.clipboardData || window.clipboardData).getData('text');
         if (!t || (t.indexOf('\t') < 0 && t.indexOf('\n') < 0)) return;
         e.preventDefault();
         var lines = t.replace(/\r/g, '').split('\n'); if (lines[lines.length - 1] === '') lines.pop();
-        var r0 = +inp.dataset.r, d0 = +inp.dataset.d, n = 0;
-        lines.forEach(function(line, i){ line.split('\t').forEach(function(v, j){ var c = host.querySelector('.sgc[data-r="' + (r0 + i) + '"][data-d="' + (d0 + j) + '"]'); if (c) { setCell(c, v.trim()); n++; } }); });
+        var rowsVis = []; $$('.sgc', host).forEach(function(c){ var rr = +c.dataset.r; if (rowsVis.indexOf(rr) < 0) rowsVis.push(rr); });
+        var ri0 = rowsVis.indexOf(+inp.dataset.r), d0 = +inp.dataset.d, n = 0;
+        lines.forEach(function(line, i){ line.split('\t').forEach(function(v, j){ var c = host.querySelector('.sgc[data-r="' + rowsVis[ri0 + i] + '"][data-d="' + (d0 + j) + '"]'); if (c) { setCell(c, v.trim()); n++; } }); });
         notify('วางข้อมูล ' + n + ' ช่อง', 'info');
       });
     });
-    if ($('sgSave')) $('sgSave').onclick = function(){ G.save(this); };
-    if ($('sgUndo')) $('sgUndo').onclick = function(){ Object.keys(G.dirty).forEach(function(k){ var x = G.dirty[k]; x.row.cells[x.d] = x.row.orig[x.d] || ''; }); G.dirty = {}; G.render(); };
+    if ($(U + 'Save')) $(U + 'Save').onclick = function(){ G.save(this); };
+    if ($(U + 'Undo')) $(U + 'Undo').onclick = function(){ Object.keys(G.dirty).forEach(function(k){ var x = G.dirty[k]; x.row.cells[x.d] = x.row.orig[x.d] || ''; }); G.dirty = {}; G.render(); };
     $$('[data-addp]', host).forEach(function(b){ b.onclick = function(){ cfg.onAddRow(b.dataset.addp); }; });
+    $$('.sg-lines', host).forEach(function(w){
+      $$('.lchip', w).forEach(function(b){ b.onclick = function(){
+        var pid = w.dataset.lp, k = lk(pid), ln = +b.dataset.ln, cur = (SG_LINES[k] || []).slice();
+        if (!ln) cur = []; else { var i = cur.indexOf(ln); if (i >= 0) cur.splice(i, 1); else cur.push(ln); cur.sort(function(a, c){ return a - c; }); }
+        SG_LINES[k] = cur; G.render();
+      }; });
+    });
   }
   G.save = function(btn){
     var bad = $$('.sgc.bad', host);
-    if (bad.length) { bad[0].focus(); return alertBox('มีช่องที่ไม่ถูกต้อง', bad.length + ' ช่องใช้ตัวย่อที่ระบบไม่รู้จัก (กรอบสีแดง) กรุณาแก้ไขก่อนบันทึก', 'warning'); }
-    var list = Object.keys(G.dirty).map(function(k){ var x = G.dirty[k]; return { pid: x.row.pid, empCode: x.row.empCode, d: x.d, value: x.value }; });
+    if (bad.length) { bad[0].focus(); return alertBox('มีช่องที่ไม่ถูกต้อง', bad.length + ' ช่องไม่ถูกต้อง (กรอบสีแดง) เอาเมาส์ชี้ที่ช่องเพื่อดูเหตุผล กรุณาแก้ไขก่อนบันทึก', 'warning'); }
+    var list = Object.keys(G.dirty).map(function(k){ var x = G.dirty[k]; return { pid: x.row.pid, empCode: x.row.empCode, d: x.d, value: x.value, line: x.line || 0 }; });
     if (!list.length) return;
     cfg.onSave(list, btn);
   };
   G.hasDirty = function(){ return Object.keys(G.dirty).length > 0; };
+  G.showRow = function(r){ r._show = true; };
   G.render();
   return G;
 }
 
 /* ================= ช่องค้นหาบุคลากร (พิมพ์รหัสหรือชื่อ) ================= */
 var PEOPLE = null;
-/** 1 ต.ค. 69 · ป้ายพ้นสภาพ: ds = วันพ้นสภาพของ HR (วันแรกที่ไม่ได้ทำงาน) · x = พ้นสภาพแล้ว */
-function todayIso(){ var d = new Date(Date.now() + 7 * 3600000); return d.toISOString().slice(0, 10); }   // วันนี้ (เวลาไทย)
-function dayBefore(ymd){ var p = String(ymd).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] - 1)); return d.toISOString().slice(0, 10); }
-function stopPill(ds, x){
-  if (!ds && !x) return '';
-  var t = ds ? (x ? 'พ้นสภาพ ' : 'แจ้งพ้นสภาพ ') + thDate(ds) : 'พ้นสภาพ';
-  return ' <span class="pill p-warn nodot stop-pill" title="' + esc(ds ? 'HR: พ้นสภาพตั้งแต่ ' + thDate(ds) + ' · ทำงานวันสุดท้าย ' + thDate(dayBefore(ds)) : 'HR แจ้งพ้นสภาพ/ไม่พบรหัส · ไม่ระบุวันที่') + '">' + esc(t) + '</span>';
+/** รายชื่อบุคลากรสำหรับค้นหา · ชุด 07: โหลดครั้งเดียว เก็บในเครื่องรายวัน (เปิดครั้งถัดไปขึ้นทันที แล้วอัปเดตเบื้องหลัง) */
+function loadPeople(){
+  if (PEOPLE) return Promise.resolve(PEOPLE);
+  var k = PC_PRE + pcUser() + ':people', c = null;   // ล้างพร้อมข้อมูลอื่นตอนออกจากระบบ (pcClear)
+  try { c = JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { c = null; }
+  var fresh = api('listPeople', {}, { quiet: true }).then(function(r){ PEOPLE = r; try { if (pcUser()) localStorage.setItem(k, JSON.stringify({ day: todayIso(), r: r })); } catch (e) { } return r; });
+  if (c && c.day === todayIso() && Array.isArray(c.r)) { PEOPLE = c.r; fresh.catch(function(){}); return Promise.resolve(c.r); }
+  return fresh;
 }
-function loadPeople(){ if (PEOPLE) return Promise.resolve(PEOPLE); return api('listPeople', {}, { quiet: true }).then(function(r){ PEOPLE = r; return r; }); }
+/** ชุด 07 · ป้ายพ้นสภาพ (เฉพาะคนที่พ้นสภาพแล้ว · x = พ้นสภาพ · ds = วันสิ้นสุดตาม HR) */
+function todayIso(){ var d = new Date(Date.now() + 7 * 3600000); return d.toISOString().slice(0, 10); }   // วันนี้ (เวลาไทย)
+function stopPill(ds, x){
+  if (!x) return '';
+  return ' <span class="pill p-warn nodot stop-pill" title="' + esc('พ้นสภาพแล้ว' + (ds ? ' · วันสิ้นสุดตาม HR ' + thDate(ds) : '') + ' · ลงเวรได้ ระบบติดธงส้มให้ตรวจ') + '">พ้นสภาพ' + (ds ? ' ' + esc(thDate(ds)) : '') + '</span>';
+}
 /** เลือกบุคลากร 1 คน · jobId = แสดงคนที่ตรงงานก่อน */
 function pickPerson(title, jobId, sub){
   return loadPeople().then(function(list){
@@ -819,10 +920,88 @@ function pickPerson(title, jobId, sub){
         var q = inp.value.trim().toLowerCase();
         var f = list.filter(function(p){ return !q || p.c.indexOf(q) >= 0 || p.n.toLowerCase().indexOf(q) >= 0; });
         if (jobId) f.sort(function(a, b){ return ((a.x || 0) - (b.x || 0)) || ((b.j.indexOf(jobId) >= 0) - (a.j.indexOf(jobId) >= 0)); });
-        L.innerHTML = f.slice(0, 40).map(function(p){ return '<button type="button" class="pp-i' + (p.x ? ' pp-x' : '') + '" data-c="' + p.c + '"><b class="tnum">' + p.c + '</b> ' + esc(p.n) + stopPill(p.ds, p.x) + '<small>' + esc(p.h) + (p.pt ? ' · จ่ายรายชั่วโมง' : '') + (jobId && p.j.indexOf(jobId) >= 0 ? ' · ตรงตำแหน่ง' : '') + (p.ds ? ' · ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(p.ds))) + ' (ลงเวรได้ถึงวันนั้น ระบบติดธงให้ตรวจ)' : p.x ? ' · ไม่ระบุวันพ้นสภาพ (ลงเวรได้ ระบบติดธงให้ตรวจ)' : '') + '</small></button>'; }).join('') || '<div class="small-muted p-2">ไม่พบรายชื่อ (บุคลากรใหม่ ให้เจ้าหน้าที่กลางเพิ่มที่หน้า "ข้อมูลบุคลากร")</div>';
+        L.innerHTML = f.slice(0, 40).map(function(p){ return '<button type="button" class="pp-i' + (p.x ? ' pp-x' : '') + '" data-c="' + p.c + '"><b class="tnum">' + p.c + '</b> ' + esc(p.n) + stopPill(p.ds, p.x) + '<small>' + esc(p.h) + (p.pt ? ' · จ่ายรายชั่วโมง' : '') + (jobId && p.j.indexOf(jobId) >= 0 ? ' · ตรงตำแหน่ง' : '') + (p.x ? ' · พ้นสภาพแล้ว ลงเวรได้ ระบบติดธงส้มให้ตรวจ' : '') + '</small></button>'; }).join('') || '<div class="small-muted p-2">ไม่พบรายชื่อ (บุคลากรใหม่ ให้เจ้าหน้าที่กลางเพิ่มที่หน้า "ข้อมูลบุคลากร")</div>';
         $$('.pp-i', L).forEach(function(b){ b.onclick = function(){ var p = list.filter(function(x){ return x.c === b.dataset.c; })[0]; MDL.hide(); resolve(p); }; });
       };
       inp.oninput = draw; draw(); setTimeout(function(){ inp.focus(); }, 250);
     });
   });
+}
+
+/* ================= ชุด 07 · เลือกศูนย์ → ติ๊กตำแหน่ง (แบบ SMC) ใช้ร่วมทุกหน้าและทุกเอกสาร · จำค่าในเครื่อง =================
+ * ค่าที่จำ = รายการรหัสตำแหน่งที่ติ๊ก (ว่าง = ทุกตำแหน่ง) · แต่ละหน้ากรองเฉพาะศูนย์ที่หน้านั้นเปิดได้ */
+function pickKey(){ return 'bd_pick:' + ((S.boot && S.boot.me && S.boot.me.empCode) || ''); }
+function pickGet(){ try { var v = JSON.parse(store(pickKey()) || 'null'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
+function pickSave(list){ store(pickKey(), JSON.stringify(list || [])); }
+/** ตำแหน่งทั้งหมดในศูนย์ที่กำหนด (ตามลำดับศูนย์ในระบบ) */
+function pickIds(brs){
+  var order = {}; S.boot.branches.forEach(function(b, i){ order[b.id] = i; });
+  return S.boot.positions.filter(function(p){ return brs.indexOf(p.branchId) >= 0; })
+    .sort(function(a, b){ return (order[a.branchId] - order[b.branchId]); }).map(function(p){ return p.id; });
+}
+/** ตำแหน่งที่เลือกไว้ภายในศูนย์ที่กำหนด (ไม่ได้เลือกในขอบเขตนี้ = ทุกตำแหน่ง) */
+function pickIn(brs, ids, x){ return ids.indexOf(x) >= 0 || (x.charAt(0) === '*' && brs.indexOf(x.slice(1)) >= 0); }
+/** ค่าที่จำไว้: รหัสตำแหน่ง หรือ "*รหัสศูนย์" = ทุกตำแหน่งของศูนย์นั้น (รวมตำแหน่งที่เพิ่มภายหลัง) */
+function pickSel(brs){ var ids = pickIds(brs), g = pickGet(), sel = ids.filter(function(id){ return g.indexOf(id) >= 0 || g.indexOf('*' + posOf(id).branchId) >= 0; }); return sel.length ? sel : ids; }
+/** ยังไม่เคยเลือกในขอบเขตนี้ → เริ่มที่ศูนย์ของตนศูนย์เดียว (ไม่โหลดทุกศูนย์โดยไม่ตั้งใจ) */
+function pickDefault(brs, b){ var ids = pickIds(brs), g = pickGet(); if (!g.some(function(x){ return pickIn(brs, ids, x); }) && b && brs.indexOf(b) >= 0) pickSave(g.concat(['*' + b])); }
+function pickIsAll(brs){ var ids = pickIds(brs); return pickSel(brs).length >= ids.length; }
+/** ศูนย์ที่มีตำแหน่งที่เลือก (เรียงตามลำดับศูนย์) */
+function pickBrs(brs){ var sel = pickSel(brs); return S.boot.branches.map(function(b){ return b.id; }).filter(function(b){ return brs.indexOf(b) >= 0 && sel.some(function(id){ var p = posOf(id); return p && p.branchId === b; }); }); }
+/** เลือกทั้งศูนย์เดียว (ใช้จากปุ่มลัด เช่น ศูนย์ควบคุม → เอกสาร) */
+/** ให้ศูนย์ b อยู่ในที่เลือก (กระโดดมาจากหน้าอื่น) โดยไม่ล้างค่าที่เลือกไว้ */
+function pickEnsure(b){ var g = pickGet(); if (g.length && !g.some(function(x){ return x === '*' + b || (posOf(x) || {}).branchId === b; })) pickSave(g.concat(['*' + b])); }
+function pickOnly(b){ pickSave(['*' + b]); }
+function pickHas(brs, pid){ return pickSel(brs).indexOf(pid) >= 0; }
+/** ข้อความสรุปบนปุ่ม */
+function pickSummary(brs){
+  var ids = pickIds(brs), sel = pickSel(brs);
+  if (sel.length >= ids.length) return (brs.length > 1 ? 'ทุกศูนย์ · ' : 'ศูนย์' + brName(brs[0]) + ' · ') + 'ทุกตำแหน่ง';
+  return pickBrs(brs).map(function(b){
+    var all = ids.filter(function(id){ return posOf(id).branchId === b; }), mine = sel.filter(function(id){ return posOf(id).branchId === b; });
+    return brName(b) + ': ' + (mine.length >= all.length ? 'ทุกตำแหน่ง' : mine.map(function(id){ return posShort(posName(id)); }).join(', '));
+  }).join(' · ');
+}
+/** ปุ่มเปิดตัวเลือก · id = รหัสปุ่ม */
+function pickButton(id, brs, label){
+  return '<div class="pk-w"><label class="form-label">' + esc(label || 'ศูนย์ / ตำแหน่ง') + '</label><button type="button" class="btn btn-ghost pk-btn" id="' + id + '"><i class="bi bi-ui-checks me-1"></i> <span>' + esc(pickSummary(brs)) + '</span> <i class="bi bi-chevron-down ms-1"></i></button></div>';
+}
+function pickBind(id, brs, onChange){ var b = $(id); if (b) b.onclick = function(){ pickModal(brs, function(){ var s = b.querySelector('span'); if (s) s.textContent = pickSummary(brs); onChange(); }); }; }
+/** หน้าต่างเลือก: แยกกลุ่มตามศูนย์ ติ๊กตำแหน่ง · ปุ่มลัด "งานนี้ทุกศูนย์" */
+function pickModal(brs, onOk){
+  var ids = pickIds(brs), on = {}; pickSel(brs).forEach(function(id){ on[id] = 1; });
+  var groups = S.boot.branches.filter(function(b){ return brs.indexOf(b.id) >= 0; });
+  var jobs = S.boot.jobs.filter(function(j){ return ids.some(function(id){ return posOf(id).jobId === j.id; }); });
+  var body = '<div class="d-flex gap-2 mb-2 flex-wrap align-items-center"><input class="form-control form-control-sm" id="pkQ" placeholder="ค้นหาตำแหน่ง" style="max-width:220px">' +
+    '<button type="button" class="btn btn-sm btn-ghost" id="pkAll"><i class="bi bi-check2-all"></i> เลือกทั้งหมด</button><button type="button" class="btn btn-sm btn-ghost" id="pkNone"><i class="bi bi-x-lg"></i> ล้าง</button></div>' +
+    (groups.length > 1 && jobs.length ? '<div class="pk-jobs mb-2"><span class="small-muted me-1">งานนี้ทุกศูนย์:</span>' + jobs.map(function(j){ return '<button type="button" class="btn btn-sm btn-soft" data-job="' + j.id + '">' + esc(j.short || j.name) + '</button>'; }).join('') + '</div>' : '') +
+    '<div class="pk-list">' + groups.map(function(b){
+      var ps = ids.filter(function(id){ return posOf(id).branchId === b.id; });
+      return '<div class="pk-g" data-b="' + b.id + '"><label class="pk-gh"><input class="form-check-input" type="checkbox" data-pkg="' + b.id + '"> ' + brDot(b.id) + ' <span class="small-muted">(' + ps.length + ' ตำแหน่ง)</span></label><div class="pk-items">' +
+        ps.map(function(id){ var p = posOf(id); return '<label class="pk-i" data-q="' + esc((p.name + ' ' + brName(b.id)).toLowerCase()) + '"><input class="form-check-input" type="checkbox" data-pk="' + id + '" data-pb="' + b.id + '" data-pj="' + p.jobId + '"' + (on[id] ? ' checked' : '') + '> ' + esc(posShort(p.name)) + '</label>'; }).join('') + '</div></div>';
+    }).join('') + '</div><div class="small-muted mt-2" id="pkCnt"></div>';
+  modal('เลือกศูนย์ / ตำแหน่ง', body, [{ text: 'ยกเลิก', cls: 'btn-ghost' }, { text: '<i class="bi bi-check2"></i> ใช้ที่เลือก', onClick: function(){
+    var list = $$('[data-pk]').filter(function(c){ return c.checked; }).map(function(c){ return c.dataset.pk; });
+    if (!list.length) { notify('กรุณาเลือกอย่างน้อย 1 ตำแหน่ง', 'info'); return false; }
+    // เก็บค่าที่เลือกในขอบเขตนี้ คงค่าของศูนย์อื่น (นอกขอบเขต) ไว้
+    var keep = pickGet().filter(function(x){ return !pickIn(brs, ids, x); }), save = [];
+    groups.forEach(function(b){ var ps = ids.filter(function(id){ return posOf(id).branchId === b.id; }), mine = ps.filter(function(id){ return list.indexOf(id) >= 0; });
+      if (mine.length && mine.length === ps.length) save.push('*' + b.id); else save = save.concat(mine); });
+    pickSave(keep.concat(save));
+    onOk(list);
+  } }], 'lg');
+  var vis = function(c){ return c.closest('.pk-i').style.display !== 'none'; };
+  var sync = function(){
+    groups.forEach(function(b){ var cs = $$('[data-pb="' + b.id + '"]'), n = cs.filter(function(c){ return c.checked; }).length, h = document.querySelector('[data-pkg="' + b.id + '"]'); h.checked = n === cs.length; h.indeterminate = n > 0 && n < cs.length; });
+    var n2 = $$('[data-pk]').filter(function(c){ return c.checked; }).length; $('pkCnt').textContent = 'เลือกแล้ว ' + n2 + ' จาก ' + ids.length + ' ตำแหน่ง';
+  };
+  setTimeout(function(){
+    $$('[data-pk]').forEach(function(c){ c.onchange = sync; });
+    $$('[data-pkg]').forEach(function(h){ h.onchange = function(){ $$('[data-pb="' + h.dataset.pkg + '"]').forEach(function(c){ if (vis(c)) c.checked = h.checked; }); sync(); }; });
+    $$('[data-job]').forEach(function(b){ b.onclick = function(){ var cs = $$('[data-pj="' + b.dataset.job + '"]'), allOn = cs.every(function(c){ return c.checked; }); $$('[data-pk]').forEach(function(c){ if (c.dataset.pj === b.dataset.job) c.checked = !allOn; else if (!allOn) c.checked = false; }); sync(); }; });
+    $('pkAll').onclick = function(){ $$('[data-pk]').forEach(function(c){ if (vis(c)) c.checked = true; }); sync(); };
+    $('pkNone').onclick = function(){ $$('[data-pk]').forEach(function(c){ if (vis(c)) c.checked = false; }); sync(); };
+    $('pkQ').oninput = function(){ var q = this.value.trim().toLowerCase(); $$('.pk-i').forEach(function(l){ l.style.display = !q || l.dataset.q.indexOf(q) >= 0 ? '' : 'none'; }); $$('.pk-g').forEach(function(g){ g.style.display = $$('.pk-i', g).some(function(l){ return l.style.display !== 'none'; }) ? '' : 'none'; }); };
+    sync();
+  }, 30);
 }

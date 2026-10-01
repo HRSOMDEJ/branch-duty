@@ -253,7 +253,7 @@ function drawEmp(){
   $('emBody').innerHTML = '<div class="small-muted mb-2">' + fmt(list.length) + ' จาก ' + fmt(EM.list.length) + ' คน</div><div class="card"><div class="card-b p-0"><div class="table-responsive"><table class="table tbl table-hover mb-0"><thead><tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>ตำแหน่ง HR / หน่วยงาน</th><th>กลุ่มการจ่าย</th><th>ศูนย์ต้นสังกัด</th><th>งานที่ขึ้นเวร</th><th></th></tr></thead><tbody>' +
     list.slice(0, 400).map(function(e){
       var jobs = e.allowedJobs.concat(e.usedJobs.filter(function(j){ return e.allowedJobs.indexOf(j) < 0; }));
-      return '<tr class="' + (e.status !== 'ACTIVE' ? 'op50' : '') + '"><td class="tnum">' + esc(e.empCode) + '</td><td><b>' + esc(e.fullName) + '</b>' + (e.status !== 'ACTIVE' || e.dateStop ? stopPill(e.dateStop, e.status !== 'ACTIVE') : '') + (e.dateStop ? '<div class="small-muted">ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(e.dateStop))) + '</div>' : '') + '</td>' +
+      return '<tr class="' + (e.status !== 'ACTIVE' ? 'op50' : '') + '"><td class="tnum">' + esc(e.empCode) + '</td><td><b>' + esc(e.fullName) + '</b>' + stopPill(e.dateStop, e.status !== 'ACTIVE') + '</td>' +
         '<td class="small">' + esc(e.hrPosition) + '<div class="small-muted">' + esc(e.orgUnit || e.division) + '</div></td>' +
         '<td>' + (e.partTime ? '<span class="pill p-violet">Part Time</span>' : '<span class="pill p-slate">ประจำ</span>') + (e.partTimeSet ? '' : ' <span class="small-muted" title="กำหนดจากชื่อตำแหน่ง HR">อัตโนมัติ</span>') + '</td>' +
         '<td>' + (e.homeBranch ? brDot(e.homeBranch) : '<span class="small-muted">—</span>') + '</td>' +
@@ -263,7 +263,7 @@ function drawEmp(){
 }
 function empModal(code){
   var e = EM.list.filter(function(x){ return x.empCode === code; })[0];
-  modal(e.fullName, '<div class="small-muted mb-3">' + esc(e.empCode) + ' · ' + esc(e.hrPosition) + '<br>' + esc(e.division) + ' / ' + esc(e.orgUnit) + (e.lastLogin ? '<br>เข้าใช้ล่าสุด ' + esc(e.lastLogin) : '') + '</div><div class="row g-2">' +
+  modal(e.fullName, '<div class="small-muted mb-3">' + esc(e.empCode) + ' · ' + esc(e.hrPosition) + '<br>' + esc(e.division) + ' / ' + esc(e.orgUnit) + (e.dateStop ? '<br>DateStop ตาม HR (วันสิ้นสุดสัญญา/เกษียณ/ลาออก): ' + esc(thDate(e.dateStop)) + (e.status !== 'ACTIVE' ? ' · <b>พ้นสภาพแล้ว</b>' : '') : '') + (e.lastLogin ? '<br>เข้าใช้ล่าสุด ' + esc(e.lastLogin) : '') + '</div><div class="row g-2">' +
     '<div class="col-md-6"><label class="form-label" for="epPt">กลุ่มการจ่าย</label><select class="form-select" id="epPt"><option value="">อัตโนมัติจากชื่อตำแหน่ง HR (' + (/part\s*-?\s*time/i.test(e.hrPosition) ? 'Part Time' : 'ประจำ') + ')</option><option value="TRUE">Part Time · จ่ายรายชั่วโมงทุกช่วง ไม่มีค่าอาหาร</option><option value="FALSE">ประจำ · วันทำการ 08–16 เต็มเวลา (ค่าอาหาร)</option></select></div>' +
     '<div class="col-md-6"><label class="form-label" for="epHb">ศูนย์ต้นสังกัด</label><select class="form-select" id="epHb"><option value="">ไม่ระบุ</option>' + S.boot.branches.map(function(b){ return '<option value="' + b.id + '">' + esc(b.name) + '</option>'; }).join('') + '</select></div>' +
     '<div class="col-12"><label class="form-label">งานที่ขึ้นเวรได้ (นอกเหนือจากที่เทียบจากตำแหน่ง HR)</label><div class="d-flex flex-wrap gap-2">' + S.boot.jobs.map(function(j){ return '<label class="ca-cb"><input type="checkbox" class="ep-job" value="' + j.id + '"' + (e.allowedJobs.indexOf(j.id) >= 0 ? ' checked' : '') + '><span>' + esc(j.name) + '</span></label>'; }).join('') + '</div></div>' +
@@ -289,10 +289,10 @@ function syncEmp(btn){
     var a = r.apiActive || {};
     var h = '<div class="small-muted mb-2">ซิงก์ ' + fmt(r.total || 0) + ' คน · ข้อมูลเปลี่ยน ' + fmt(r.changed || 0) + ' คน · พ้นสภาพในระบบ ' + fmt(r.inactive || 0) + ' คน · มีวันพ้นสภาพ ' + fmt(r.withStop || 0) + ' คน</div>' +
       '<div class="small mb-2">สถานะที่ HR ส่งมา: ปฏิบัติงาน ' + fmt(a.yes || 0) + ' · พ้นสภาพ ' + fmt(a.no || 0) + ' · ไม่ระบุ ' + fmt(a.unknown || 0) + (r.notFound && r.notFound.length ? ' · <b>ไม่พบรหัสใน HR ' + r.notFound.length + '</b>' : '') + '</div>' +
-      (ch.length ? '<div class="sync-chg"><table class="table table-sm mb-2"><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>วันพ้นสภาพ (HR)</th></tr></thead><tbody>' + ch.map(function(c){
-        return '<tr><td class="tnum">' + esc(c.empCode) + '</td><td>' + esc(c.name || '') + '</td><td>' + esc(st(c.from)) + (c.from !== c.to ? ' → <b>' + esc(st(c.to)) + '</b>' : '') + (c.found ? '' : ' <span class="pill p-bad nodot">ไม่พบใน HR</span>') + '</td><td>' + (c.dateStop ? esc(thDate(c.dateStop)) + '<div class="small-muted">ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(c.dateStop))) + '</div>' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="small mb-2">ไม่มีใครเปลี่ยนสถานะหรือวันพ้นสภาพ</div>') +
+      (ch.length ? '<div class="sync-chg"><table class="table table-sm mb-2"><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>DateStop (HR)</th></tr></thead><tbody>' + ch.map(function(c){
+        return '<tr><td class="tnum">' + esc(c.empCode) + '</td><td>' + esc(c.name || '') + '</td><td>' + esc(st(c.from)) + (c.from !== c.to ? ' → <b>' + esc(st(c.to)) + '</b>' : '') + (c.found ? '' : ' <span class="pill p-bad nodot">ไม่พบใน HR</span>') + '</td><td>' + (c.dateStop ? esc(thDate(c.dateStop)) : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="small mb-2">ไม่มีใครเปลี่ยนสถานะหรือวันพ้นสภาพ</div>') +
       '<div class="small-muted">ฟิลด์ที่ HR ส่งมา: ' + esc((r.fields || []).join(', ') || '—') + '</div>' +
-      '<div class="small-muted mt-1">คนพ้นสภาพยังลงเวรได้ · เวรก่อนวันพ้นสภาพ = ธงส้ม (เบิกได้) · เวรตั้งแต่วันพ้นสภาพ = ธงแดง (ต้องแก้ก่อนปิดรอบ)</div>';
+      '<div class="small-muted mt-1">กติกา: DateStop ผ่านไปแล้ว = พ้นสภาพ · ยังไม่ถึง (วันเกษียณ/สิ้นสุดสัญญาในอนาคต) = ปฏิบัติงาน · คนพ้นสภาพยังลงเวรได้ เวรทุกเวรติดธงส้มให้เห็น</div>';
     modal('ผลการซิงก์ข้อมูลจาก HR', h, null, 'lg');
     if ($('emBody')) api('listEmployees', {}, { fresh: true, quiet: true }).then(function(l){ EM.list = l; drawEmp(); }).catch(function(){});
   }).catch(function(){});
@@ -307,8 +307,8 @@ function probeEmp(code){
       if (!r.found) { $('pbOut').innerHTML = '<div class="dd-stop">ไม่พบรหัส ' + esc(c) + ' ในข้อมูล HR (SmartAPI ไม่ส่งข้อมูลกลับ)</div>'; return; }
       var R = r.read, S = r.stored, act = R.active === true ? 'ปฏิบัติงาน' : R.active === false ? 'พ้นสภาพ' : 'ไม่ระบุ';
       var h = '<div class="mb-2"><b>' + esc(R.fullName) + '</b> · ' + esc(R.hrPosition) + '</div><table><tbody>' +
-        '<tr><td>ระบบอ่านได้ว่า</td><td>สถานะจาก HR: <b>' + act + '</b> · วันพ้นสภาพ: <b>' + (R.dateStop ? esc(thDate(R.dateStop)) + '</b> (ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(R.dateStop))) + ')' : '—</b>') + ' → สถานะในระบบ <b>' + (r.statusNow === 'ACTIVE' ? 'ปฏิบัติงาน' : 'พ้นสภาพ') + '</b></td></tr>' +
-        '<tr><td>ที่เก็บในระบบตอนนี้</td><td>' + (S ? esc(S.status === 'ACTIVE' ? 'ปฏิบัติงาน' : 'พ้นสภาพ') + (S.dateStop ? ' · วันพ้นสภาพ ' + esc(thDate(S.dateStop)) : '') + ' <span class="small-muted">(ซิงก์ ' + esc(S.lastSync || '—') + ')</span>' : 'ยังไม่อยู่ในรายชื่อบุคลากรของระบบ') + '</td></tr>' +
+        '<tr><td>ระบบอ่านได้ว่า</td><td>DateStop: <b>' + (R.dateStop ? esc(thDate(R.dateStop)) : '—') + '</b>' + (R.active !== null ? ' · สถานะจาก HR: <b>' + act + '</b>' : '') + ' → สถานะในระบบ <b>' + (r.statusNow === 'ACTIVE' ? 'ปฏิบัติงาน' : 'พ้นสภาพ') + '</b></td></tr>' +
+        '<tr><td>ที่เก็บในระบบตอนนี้</td><td>' + (S ? esc(S.status === 'ACTIVE' ? 'ปฏิบัติงาน' : 'พ้นสภาพ') + (S.dateStop ? ' · DateStop ' + esc(thDate(S.dateStop)) : '') + ' <span class="small-muted">(ซิงก์ ' + esc(S.lastSync || '—') + ')</span>' : 'ยังไม่อยู่ในรายชื่อบุคลากรของระบบ') + '</td></tr>' +
         Object.keys(r.fields).map(function(k){ return '<tr><td>' + esc(k) + '</td><td>' + esc(r.fields[k] === null ? 'null' : String(r.fields[k])) + '</td></tr>'; }).join('') + '</tbody></table>';
       $('pbOut').innerHTML = h;
     }).catch(function(e){ $('pbOut').innerHTML = '<div class="dd-stop">' + esc(e && (e.text || e.title || e.message) || 'ตรวจไม่สำเร็จ') + '</div>'; });

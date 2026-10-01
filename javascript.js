@@ -1,4 +1,4 @@
-var BD_VERSION = '1.2569', BD_BUILD = '2569-10-01.1', BD_BUILD_TH = '1 ต.ค. 2569';
+var BD_VERSION = '1.2569', BD_BUILD = '2569-10-02.1', BD_BUILD_TH = '2 ต.ค. 2569';
 /* BRAND (ชื่อระบบ โลโก้ สี ประกาศ): อ่านค่าที่แคชไว้ในเครื่องก่อน แล้วขอค่าล่าสุดจาก backend ตอนเริ่มแอป (ดู init ใน help.js) */
 var BRAND = (function(){ try { return JSON.parse(localStorage.getItem('bd_brand') || 'null'); } catch (e) { return null; } })();
 /* ================= แกนหลัก ================= */
@@ -15,6 +15,8 @@ function store(k, v){ try { if (v === undefined) return localStorage.getItem(k);
 function fmt(n, d){ n = +n || 0; return n.toLocaleString('th-TH', { minimumFractionDigits: d || 0, maximumFractionDigits: d == null ? 2 : d }); }
 function thYm(ym){ var p = ym.split('-'); return TH_MF[+p[1]-1] + ' ' + (+p[0] + 543); }
 function thDate(d){ var p = d.split('-'); return +p[2] + ' ' + TH_M[+p[1]-1] + ' ' + String(+p[0] + 543).slice(2); }
+/** วันที่แบบตัวเลขเต็ม 1/9/2569 (เอกสารพิมพ์ ชุด 07) */
+function thDateNum(d){ var p = String(d || '').split('-'); return p.length < 3 ? String(d || '') : +p[2] + '/' + +p[1] + '/' + (+p[0] + 543); }
 function thDateFull(d){ var p = d.split('-'); return +p[2] + ' ' + TH_M[+p[1]-1] + ' ' + (+p[0] + 543); }
 function dowOf(d){ var p = d.split('-'); return new Date(Date.UTC(+p[0], +p[1]-1, +p[2])).getUTCDay(); }
 function addYm(ym, n){ var p = ym.split('-'); var y = +p[0], m = +p[1] + n; while (m > 12){ m -= 12; y++; } while (m < 1){ m += 12; y--; } return y + '-' + (m < 10 ? '0' : '') + m; }
@@ -329,7 +331,7 @@ function savingChip(d, ok){
   el.className = 'save-chip show ok'; el.innerHTML = '<i class="bi bi-check2-circle"></i> บันทึกแล้ว';
   saveT = setTimeout(function(){ el.className = 'save-chip'; }, 1800);
 }
-window.addEventListener('beforeunload', function(e){ if (SAVEN > 0) { e.preventDefault(); e.returnValue = 'ระบบกำลังบันทึกข้อมูล'; return e.returnValue; } });
+window.addEventListener('beforeunload', function(e){ if (SAVEN > 0 || (LEAVE_GUARD && LEAVE_GUARD())) { e.preventDefault(); e.returnValue = 'ระบบกำลังบันทึกข้อมูล'; return e.returnValue; } });
 /** เปิดหน้าแบบ "แสดงของที่จำไว้ทันที แล้วอัปเดตเบื้องหลัง" · draw(data, meta) ถูกเรียกซ้ำเฉพาะเมื่อข้อมูลเปลี่ยนจริง */
 function apiView(action, payload, draw, extra){
   var o = Object.assign({ fresh: true }, extra || {});
@@ -418,6 +420,9 @@ function resultBox(title, results){
 }
 
 var MDL = null;
+/** ปิดหน้าต่าง · ถ้ากำลังเปิดอยู่ (อะนิเมชันยังไม่จบ) รอให้เปิดเสร็จแล้วปิด ไม่ให้ค้าง */
+function mdlHide(){ if (!MDL) return; var el = $('mdl'); if (!MDL._isTransitioning) return MDL.hide(); if (!el.classList.contains('show')) return;   // กำลังปิดอยู่แล้ว
+  var h = function(){ el.removeEventListener('shown.bs.modal', h); MDL.hide(); }; el.addEventListener('shown.bs.modal', h); }
 function modal(title, body, buttons, size){
   $('mdlTitle').textContent = title;
   $('mdlBody').innerHTML = body;
@@ -425,7 +430,7 @@ function modal(title, body, buttons, size){
   var f = $('mdlFoot'); f.innerHTML = '';
   (buttons || [{ text: 'ปิด', cls: 'btn-ghost' }]).forEach(function(b){
     var el = document.createElement('button'); el.type = 'button'; el.className = 'btn ' + (b.cls || 'btn-brand'); el.innerHTML = b.text;
-    el.onclick = function(){ if (b.onClick) { var r = b.onClick(el); if (r === false) return; } MDL.hide(); };
+    el.onclick = function(){ if (b.onClick) { var r = b.onClick(el); if (r === false) return; } mdlHide(); };
     f.appendChild(el);
   });
   MDL = MDL || new bootstrap.Modal($('mdl'));
@@ -555,7 +560,7 @@ $('fPhone').addEventListener('submit', function(e){
   api('updatePhone', { phone: $('phNew').value }, { btn: e.submitter }).then(function(me){ S.boot.me = me; notify('บันทึกหมายเลขโทรศัพท์เรียบร้อย'); showApp(); }).catch(function(){});
 });
 
-function doLogout(){ api('logout', {}, { quiet: true }).catch(function(){}); memoClear(); pcClear(); prefetchDone = false; store('bd_token', null); store('bd_boot', null); S.token = null; S.boot = null; showLogin(); }
+function doLogout(){ api('logout', {}, { quiet: true }).catch(function(){}); memoClear(); pcClear(); PEOPLE = null; LEAVE_GUARD = null; prefetchDone = false; store('bd_token', null); store('bd_boot', null); S.token = null; S.boot = null; showLogin(); }
 
 function openAccount(){
   var me = S.boot.me;
@@ -623,7 +628,12 @@ function showApp(){
 }
 function warnBackendOld(){ if (S.backendOld && S.boot && S.boot.me && S.boot.me.roles.indexOf('ADMIN') >= 0) updateBar(S.backendOld, false); }
 
+/** หน้าที่มีงานแก้ค้าง (ยังไม่กดบันทึก) ตั้งค่าฟังก์ชันนี้ → คืนข้อความเตือน · ว่าง = ออกได้ */
+var LEAVE_GUARD = null;
 function go(page){
+  var lg = LEAVE_GUARD && LEAVE_GUARD();
+  if (lg) { confirmBox('ยังไม่ได้บันทึก', lg + '\nถ้าออกจากหน้านี้ การแก้ไขที่ยังไม่บันทึกจะหายไป', 'ออกโดยไม่บันทึก', true).then(function(ok){ if (ok) { LEAVE_GUARD = null; go(page); } else $$('[data-p]').forEach(function(a){ a.classList.toggle('active', a.dataset.p === S.page); }); }); return; }
+  LEAVE_GUARD = null;
   S.page = page; store('bd_page', page);
   var mm = MENU.filter(function(m){ return m.id === page; })[0];
   if ($('topTitle')) $('topTitle').textContent = mm ? mm.text : '';

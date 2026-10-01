@@ -4,7 +4,7 @@
    ===================================================================== */
 
 function jumpEntry(ym, b){ setBr(b); S.enYm = ym; go('entry'); }
-function jumpPlan(ym, b){ setBr(b); S.plYm = ym; go('plan'); }
+function jumpPlan(ym, b){ setBr(b); pickEnsure(b); S.plYm = ym; go('plan'); }
 function histLine(h){
   var ps = S.boot.pstatus || {};
   var act = { SUBMIT_BRANCH: 'ศูนย์ส่งให้ฝ่าย', RETURN_BRANCH: 'ตีกลับให้ศูนย์แก้ไข', VERIFY_BRANCH: 'ตรวจแล้ว · ปิดรอบ', STEP_PROPOSED: 'เสนอหัวหน้าฝ่าย', STEP_SENT_HR: 'ส่ง HR', STEP_HR_CHECKED: 'HR ตรวจแล้ว', ROLLBACK: 'ย้อนสถานะ', IMPORT_LEGACY: 'นำเข้าจากระบบเดิม', SAVE_PAYREFS: 'บันทึกเลขอ้างอิง' }[h.action] || h.action;
@@ -92,7 +92,7 @@ function drawClose(d){
       if (st === 'SUBMITTED') acts += '<button class="btn btn-danger-soft" onclick="clReturn(\'' + b.id + '\',this)"><i class="bi bi-arrow-return-left"></i> ตีกลับ</button>';
       acts += '<button class="btn btn-brand"' + (canVerify ? '' : ' disabled title="' + esc(why) + '"') + ' onclick="clVerify(\'' + b.id + '\',this)"><i class="bi bi-shield-lock"></i> ตรวจแล้ว · ปิดรอบ</button>';
     } else {
-      acts += '<button class="btn btn-ghost" onclick="S.dcYm=\'' + d.ym + '\';S.dcBr=\'' + b.id + '\';go(\'docs\')"><i class="bi bi-printer"></i> เอกสาร</button>';
+      acts += '<button class="btn btn-ghost" onclick="S.dcYm=\'' + d.ym + '\';pickOnly(\'' + b.id + '\');go(\'docs\')"><i class="bi bi-printer"></i> เอกสาร</button>';
       if (has('ADMIN') && !d.archived) acts += '<button class="btn btn-ghost" onclick="clRollback(\'' + b.id + '\')"><i class="bi bi-arrow-counterclockwise"></i> ย้อนสถานะ</button>';
     }
     return '<div class="cl-card" style="--bc:' + esc(b.color) + '"><div class="cl-h"><div class="ctl-name"><i></i>' + esc(b.name) + '</div>' + statusPill(st, true) +
@@ -141,40 +141,23 @@ function clRollback(id){
 /* ================= เอกสารและไฟล์ HRMi ================= */
 var DC = { fmt: 'pdf' };
 PAGES.docs = function(){
-  var ym = S.dcYm || addYm(S.boot.ym, -1), brs = myBrs(), br = S.dcBr || (isCentral() ? 'all' : curBr());
+  var ym = S.dcYm || addYm(S.boot.ym, -1), brs = myBrs();
   S.dcYm = null;
   mount(pageHead(isCentral() ? 'งานส่วนกลาง' : 'งานศูนย์', 'เอกสารและไฟล์ HRMi', 'กด "พิมพ์" แล้วหน้าต่างพิมพ์ขึ้นทันที (ต้องการไฟล์ ให้เลือกเครื่องพิมพ์เป็น "บันทึกเป็น PDF") · เลือกศูนย์/ตำแหน่งด้านบน · เอกสารของศูนย์ที่ยังไม่ปิดรอบมีคำว่า "ร่าง" · ระบบไม่เก็บสำเนาใน Drive') +
-    '<div class="filters">' + ymSelect('dcYm', ym, 14, 1) + brSelect('dcBr', brs, br, isCentral() && brs.length > 1) + '<div id="dcPosW"></div>' +
+    '<div class="filters">' + ymSelect('dcYm', ym, 14, 1) + pickButton('dcPick', brs, 'ศูนย์ / ตำแหน่งที่จะพิมพ์') +
     (S.boot.canExcel ? '<div><label class="form-label">รูปแบบไฟล์</label><div class="seg" id="dcFmt"><button data-v="pdf" class="on"><i class="bi bi-file-earmark-pdf"></i> PDF</button><button data-v="xlsx"><i class="bi bi-file-earmark-spreadsheet"></i> Excel</button></div></div>' : '') +
     '</div><div id="dcStat" class="mb-3"></div><div id="dcBody"></div>');
   DC.fmt = 'pdf';
   $$('#dcFmt button').forEach(function(b){ b.onclick = function(){ $$('#dcFmt button').forEach(function(x){ x.classList.toggle('on', x === b); }); DC.fmt = b.dataset.v; }; });
-  $('dcYm').onchange = drawDocs; $('dcBr').onchange = function(){ S.dcBr = this.value; S.dcPos = 'all'; drawDocs(); };
+  $('dcYm').onchange = drawDocs; pickBind('dcPick', brs, drawDocs);
   drawDocs();
 };
-function dcBrs(){ var v = $('dcBr').value; return v === 'all' ? myBrs() : [v]; }
-/** ตัวเลือกตำแหน่ง: ศูนย์เดียว = ตำแหน่งของศูนย์ · ทุกศูนย์ = เลือกตามงาน (เช่น พยาบาล ทุกศูนย์) */
-function dcPosOptions(){
-  var brs = dcBrs(), one = brs.length === 1;
-  if (one) return S.boot.positions.filter(function(p){ return p.branchId === brs[0]; }).map(function(p){ return [p.id, posShort(p.name)]; });
-  var jobs = {}; S.boot.positions.forEach(function(p){ if (brs.indexOf(p.branchId) >= 0) jobs[p.jobId] = 1; });
-  return S.boot.jobs.filter(function(j){ return jobs[j.id]; }).map(function(j){ return ['J:' + j.id, j.name + ' (ทุกศูนย์)']; });
-}
-/** ตำแหน่งในขอบเขตที่เลือก (ว่าง = ทุกตำแหน่ง) */
-function dcPids(all){
-  var v = $('dcPos') ? $('dcPos').value : 'all', brs = dcBrs();
-  var inScope = S.boot.positions.filter(function(p){ return brs.indexOf(p.branchId) >= 0; });
-  if (v === 'all') return all ? inScope.map(function(p){ return p.id; }) : [];
-  if (v.indexOf('J:') === 0) return inScope.filter(function(p){ return p.jobId === v.slice(2); }).map(function(p){ return p.id; });
-  return [v];
-}
+/** ชุด 07: ศูนย์/ตำแหน่งจากตัวเลือกกลาง (ใช้ร่วมทุกเอกสารและทุกหน้า) */
+function dcBrs(){ return pickBrs(myBrs()); }
+/** ตำแหน่งที่เลือก ([] = ทุกตำแหน่งของศูนย์ที่เลือก) */
+function dcPids(){ return pickIsAll(myBrs()) ? [] : pickSel(myBrs()); }
 function drawDocs(){
-  var ym = $('dcYm').value, bid = $('dcBr').value, one = bid !== 'all';
-  var opts = dcPosOptions(), cur = S.dcPos || 'all';
-  if (cur !== 'all' && !opts.some(function(o){ return o[0] === cur; })) cur = 'all';
-  $('dcPosW').innerHTML = '<label class="form-label" for="dcPos">ตำแหน่ง</label><select class="form-select" id="dcPos" data-search><option value="all">ทุกตำแหน่ง</option>' + opts.map(function(o){ return '<option value="' + o[0] + '"' + (o[0] === cur ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('') + '</select>';
-  enhanceSelects($('dcPosW'));
-  $('dcPos').onchange = function(){ S.dcPos = this.value; };
+  var ym = $('dcYm').value, bids = dcBrs(), one = bids.length === 1, bid = bids[0];
   $('dcStat').innerHTML = '<div class="d-flex flex-wrap gap-2" id="dcPills"><span class="small-muted">กำลังโหลดสถานะ…</span></div>';
   if (isCentral()) api('getControlBoard', { ym: ym }, { quiet: true, fresh: true }).then(function(d){
     if (!$('dcPills') || ym !== $('dcYm').value) return;
@@ -194,12 +177,12 @@ function drawDocs(){
     '<button class="btn btn-brand" onclick="dcMeal(this)"><i class="bi bi-printer"></i> พิมพ์ตารางค่าอาหาร</button>');
   h += card('calculator', 'ic-ok', 'สรุปยอดเบิก', 'ยอดชั่วโมงและเงินแยกตามศูนย์ ตำแหน่ง และรหัสรายได้ สำหรับเสนอหัวหน้าฝ่าย', '',
     '<button class="btn btn-brand" onclick="dcSummary(this)"><i class="bi bi-printer"></i> พิมพ์สรุปยอด</button>');
-  if (isCentral()) h += card('filetype-xlsx', 'ic-violet', 'ไฟล์นำเข้า HRMi', 'รูปแบบเดิม (รหัสพนักงาน · รหัสรายได้ · จำนวน) แยกชีทตามรหัสรายได้ · ออกได้เฉพาะศูนย์ที่ปิดรอบแล้ว · เลือกตำแหน่งได้',
+  if (isCentral()) h += card('filetype-xlsx', 'ic-violet', 'ไฟล์นำเข้า HRMi', 'รูปแบบเดิม (รหัสพนักงาน · รหัสรายได้ · จำนวน) แยกชีทตามรหัสรายได้ · ออกได้ทันทีไม่ต้องรอปิดรอบ (เฉพาะเวรที่ยืนยันแล้ว · ศูนย์ที่ยังไม่ปิดรอบ ชื่อไฟล์ต่อท้าย _ยังไม่ปิดรอบ)',
     '<div class="row g-2 mb-2"><div class="col-12"><label class="form-label" for="dcMode">รูปแบบ</label><select class="form-select" id="dcMode"><option value="combined">ไฟล์เดียว แยกชีทตามรหัส</option><option value="separate">แยกไฟล์ตามรหัสรายได้</option><option value="zip">แยกไฟล์ รวมเป็น .zip</option></select></div>' +
     '<div class="col-12"><div class="form-check"><input class="form-check-input" type="checkbox" id="dcMealOn" checked><label class="form-check-label" for="dcMealOn">รวมค่าอาหาร R706</label></div></div></div>',
     '<button class="btn btn-brand" onclick="dcHRMi(this)"><i class="bi bi-download"></i> ส่งออกไฟล์ HRMi</button>');
   h += card('paperclip', 'ic-mute', 'ใบลืมสแกนรวมเล่ม', 'รวมไฟล์แนบใบลืมสแกนทั้งเดือนเป็น PDF เล่มเดียว พร้อมหน้าสรุปรายการ', '',
-    '<button class="btn btn-ghost" onclick="printAttachments($(\'dcYm\').value,$(\'dcBr\').value)"><i class="bi bi-journal-bookmark"></i> รวมเล่ม PDF เพื่อพิมพ์</button>');
+    '<button class="btn btn-ghost" onclick="printAttachments($(\'dcYm\').value,dcBrs(),dcPids(),pickSummary(myBrs()))"><i class="bi bi-journal-bookmark"></i> รวมเล่ม PDF เพื่อพิมพ์</button>');
   $('dcBody').innerHTML = h + '</div>';
   enhanceSelects($('dcBody'));
 }
@@ -208,7 +191,7 @@ function drawDocs(){
  * Excel (ผู้ดูแลระบบ) 1 ต.ค. 69: สร้างในเครื่องจากข้อมูลชุดเดียวกัน (xlsxBRDoc) ดาวน์โหลดลงเครื่องทันที
  */
 function dcRun(doc, base, btn, msg){
-  var p = { doc: doc, ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids(false) };
+  var p = { doc: doc, ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids() };
   for (var k in base) p[k] = base[k];
   if (DC.fmt === 'xlsx') {   // 1 ต.ค. 69: Excel สร้างในเครื่องจากข้อมูลชุดเดียวกับหน้าพิมพ์ (ไม่ต้องรอ Google Sheet ชั่วคราว) แล้วดาวน์โหลดลงเครื่อง
     p.excel = true;
@@ -226,9 +209,9 @@ function dcSummary(btn){ dcRun('summary', {}, btn, 'กำลังเตรี�
 /** ไฟล์ HRMi: เซิร์ฟเวอร์ส่งเฉพาะตัวเลข หน้าเว็บสร้าง .xlsx ในเครื่อง (เร็ว ไม่ต้องสร้าง Google Sheet ชั่วคราว) */
 function dcHRMi(btn){
   var mode = $('dcMode').value;
-  api('hrmiData', { ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids(false), mode: mode, includeMeal: $('dcMealOn').checked }, { btn: btn }).then(function(r){
+  api('hrmiData', { ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids(), mode: mode, includeMeal: $('dcMealOn').checked }, { btn: btn }).then(function(r){
     var toSheet = function(x){ return { name: x.code, rows: [r.header].concat(x.rows.map(function(row){ return [/^\d+$/.test(String(row[0])) ? +row[0] : row[0]].concat(row.slice(1)); })) }; };
-    var done = function(){ if (r.notReady && r.notReady.length) setTimeout(function(){ notify('ยังไม่ปิดรอบ (ไม่รวมในไฟล์): ' + r.notReady.join(', '), 'warning'); }, 900); };
+    var done = function(){ if (r.notReady && r.notReady.length) setTimeout(function(){ alertBox('ไฟล์ HRMi ฉบับยังไม่ปิดรอบ', 'ศูนย์ที่ยังไม่ปิดรอบ: ' + r.notReady.join(', ') + '\nไฟล์มีเฉพาะเวรที่ยืนยันการปฏิบัติงานแล้ว ณ ขณะนี้ หากมีการแก้ไขหลังจากนี้ กรุณาออกไฟล์ใหม่', 'warning'); }, 900); };
     if (mode === 'combined') { downloadBlobs([{ name: r.tag + '.xlsx', blob: xlsxBlob(r.sheets.map(toSheet)) }]); return done(); }
     var files = r.sheets.map(function(x){ return { name: x.code + '.xlsx', blob: xlsxBlob([toSheet(x)]) }; });
     if (mode !== 'zip') { downloadBlobs(files); return done(); }

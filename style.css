@@ -671,7 +671,7 @@ tr.cal-row.dk-WEEKEND td,tr.sheet-empty.dk-WEEKEND td{background:var(--d-weekend
 .dt-mark{text-align:center;font-weight:700;font-size:11.5pt;color:#c00000;line-height:20px;min-height:20px}
 .dt-t{border-collapse:collapse;table-layout:fixed;width:100%;border:2px solid #000}
 .dt-t th,.dt-t td{border:1px solid #000;padding:1px 3px;vertical-align:middle;overflow:hidden}
-.dt-t thead th{background:#f2f2f2;font-size:10.5pt;text-align:center;font-weight:700;line-height:1.15;word-break:break-all;padding:1px}
+.dt-t thead th{background:#f2f2f2;font-size:10.5pt;text-align:center;font-weight:700;line-height:1.15;padding:1px}
 .dt-t thead{border-bottom:2px solid #000}
 .dt-t td.c,.dt-t td.d{text-align:center}
 .dt-t td.d{font-weight:700;padding:0}
@@ -684,14 +684,14 @@ tr.cal-row.dk-WEEKEND td,tr.sheet-empty.dk-WEEKEND td{background:var(--d-weekend
 .ds-b .ds-gap{height:16px}
 .dt-foot{display:flex;justify-content:space-between;margin-top:10px;font-size:9pt;color:#555}
 .dt-foot span{font-size:10pt;color:#000;font-style:normal}
-.d32{width:684px;font-size:11pt}
+.d32{width:750px;font-size:11pt}
 .d32-no{text-align:right;font-size:14pt;font-weight:700;line-height:18px;min-height:18px}
 .d32-t1{text-align:center;font-weight:700;font-size:14pt;line-height:28px}
 .d32-t2{text-align:center;font-weight:700;font-size:12pt;line-height:24px}
-.d32-t{border-collapse:collapse;table-layout:fixed;width:684px;border:2px solid #000}
+.d32-t{border-collapse:collapse;table-layout:fixed;width:750px;border:2px solid #000}
 .d32-t th{background:#eee;font-weight:700;font-size:10.5pt;height:22px;border:1px solid #000;text-align:center;line-height:1.1}
-.d32-t td{border:1px solid #000;height:25px;padding:0 3px;overflow:hidden;white-space:nowrap}
-.d32-t td.nm{font-size:10.5pt;white-space:normal;line-height:1.1}
+.d32-t td{border:1px solid #000;height:28px;padding:0 3px;overflow:hidden;white-space:nowrap}
+.d32-t td.nm{font-size:10.5pt;line-height:1.1}
 .d32-t td.c{text-align:center}
 .d32-t .g,.d32-t .gl{border-left:2px solid #000}.d32-t .gr{border-right:2px solid #000}
 .d32-t td.dk{background:#9e9e9e!important}
@@ -1086,3 +1086,28 @@ tr:hover .sc-add,.sc-add:focus{opacity:1}
 .dd-stop{font-size:13px;color:#9a5b00;background:#fff6e6;border:1px solid #ffd99a;border-radius:10px;padding:6px 10px}
 .hr-probe{font-size:13px}.hr-probe table{width:100%}.hr-probe td{padding:3px 6px;border-bottom:1px solid var(--line-2);vertical-align:top}.hr-probe td:first-child{color:var(--muted);white-space:nowrap;width:38%}
 .sync-chg{max-height:260px;overflow:auto;font-size:13px;text-align:left}
+/* ชุด 07 · ตัวเลือกศูนย์/ตำแหน่ง */
+.pk-btn{max-width:560px;text-align:left;white-space:normal;line-height:1.3;min-height:38px}
+.pk-g{padding:8px 0;border-bottom:1px dashed var(--line-2)}.pk-g:last-child{border-bottom:0}
+.pk-gh{display:flex;gap:8px;align-items:center;cursor:pointer;margin-bottom:6px;font-weight:600}
+.pk-items{display:flex;flex-wrap:wrap;gap:6px 14px;padding-left:26px}
+.pk-i{display:flex;gap:6px;align-items:center;cursor:pointer;font-size:14px}
+.pk-jobs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.br-sec{margin-top:18px}.br-sec:first-child{margin-top:4px}
+.br-sec-h{display:flex;align-items:center;gap:10px;margin:0 0 8px;font-size:16px;font-weight:700}
+/* ชุด 07 · เลือกใบเซ็นชื่อในตาราง + ร่างในหน้าบันทึกการปฏิบัติงาน */
+.sg-lines{display:inline-flex;align-items:center;gap:4px;margin-right:10px;flex-wrap:wrap;vertical-align:middle}
+.lchip{border:1px solid var(--line,#d9dcea);background:#fff;color:#4a5070;border-radius:999px;padding:1px 10px;font-size:11.5px;line-height:1.6;cursor:pointer}
+.lchip:hover{border-color:var(--brand)}
+.lchip.on{background:var(--brand);border-color:var(--brand);color:#fff}
+.pv-dots i.gap2{margin-left:14px}
+td.sc.sc-dr,.sc-empty.sc-dr{outline:2px dashed #f0a020;outline-offset:-3px}
+.dr-tag{display:inline-block;font-size:10.5px;font-weight:700;color:#9a5b00;background:#fff3d6;border:1px solid #f3cf7a;border-radius:6px;padding:0 5px;margin-left:4px}
+tr.row-dr td{background:#fffaf0}
+/* ชุด 07: รายงานที่พิมพ์ใช้ฟอนต์ Sarabun ทุกฉบับ */
+#printRoot .pr-doc,#printRoot .pr-doc .pr-title,#printRoot .pr-doc h2,#printRoot .pr-doc table{font-family:'Sarabun','IBM Plex Sans Thai',sans-serif}
+/* ชุด 07: ข้อความบรรทัดเดียวในเอกสารพิมพ์ (ระบบลดขนาดอักษรให้พอดีช่อง) */
+#printRoot .fit{white-space:nowrap;overflow:hidden;text-overflow:clip}
+.dt-t td.fit{white-space:nowrap}
+.d32 .ds-b{width:49%}
+.pk-w{display:flex;flex-direction:column;min-width:0}.pk-w .form-label{white-space:nowrap}.pk-btn{display:inline-flex;align-items:center;gap:4px}
