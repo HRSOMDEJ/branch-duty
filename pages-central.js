@@ -205,16 +205,14 @@ function drawDocs(){
 }
 /**
  * 30 ก.ย. 69 พิมพ์จากเบราว์เซอร์: ถามเซิร์ฟเวอร์ครั้งเดียว (เฉพาะข้อมูล) แล้วหน้าต่างพิมพ์ขึ้นทันที · ทุกศูนย์/ตำแหน่งที่เลือกรวมในงานพิมพ์เดียว
- * Excel (ผู้ดูแลระบบ) ยังสร้างที่เซิร์ฟเวอร์เหมือนเดิม
+ * Excel (ผู้ดูแลระบบ) 1 ต.ค. 69: สร้างในเครื่องจากข้อมูลชุดเดียวกัน (xlsxBRDoc) ดาวน์โหลดลงเครื่องทันที
  */
 function dcRun(doc, base, btn, msg){
   var p = { doc: doc, ym: $('dcYm').value, branchIds: dcBrs(), positionIds: dcPids(false) };
   for (var k in base) p[k] = base[k];
-  if (DC.fmt === 'xlsx') {
-    var act = { sign: 'exportSignSheets', hours: 'exportHoursTables', meal: 'exportMeal', summary: 'exportSummary' }[doc];
-    var brs = doc === 'sign' ? p.branchIds : [null], files = [], chain = Promise.resolve();
-    brs.forEach(function(b){ chain = chain.then(function(){ var q = {}; for (var k2 in p) q[k2] = p[k2]; q.format = 'xlsx'; if (b) { q.branchId = b; q.branchIds = [b]; } return api(act, q, { btn: btn, timeout: 330000, quiet: brs.length > 1 }).then(function(r){ files = files.concat(r.files || []); }, function(){}); }); });
-    return chain.then(function(){ if (files.length) download(files); });
+  if (DC.fmt === 'xlsx') {   // 1 ต.ค. 69: Excel สร้างในเครื่องจากข้อมูลชุดเดียวกับหน้าพิมพ์ (ไม่ต้องรอ Google Sheet ชั่วคราว) แล้วดาวน์โหลดลงเครื่อง
+    p.excel = true;
+    return api('printDoc', p, { btn: btn, block: 'กำลังสร้างไฟล์ Excel…' }).then(function(r){ return xlsxBRDoc(r); }).catch(function(e){ if (e && e.message && !e.title) alertBox('สร้างไฟล์ Excel ไม่สำเร็จ', e.message, 'error'); });
   }
   return api('printDoc', p, { btn: btn, block: msg || 'กำลังเตรียมเอกสารสำหรับพิมพ์…' }).then(function(r){
     if (r.kind === 'sign32' && r.positions > 1) notify('ใบบันทึกเวลา ' + r.sheets + ' ใบ (' + r.positions + ' ตำแหน่ง)', 'info');

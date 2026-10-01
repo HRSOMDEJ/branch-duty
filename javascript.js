@@ -1,4 +1,4 @@
-var BD_VERSION = '1.2569', BD_BUILD = '2569-09-30.1', BD_BUILD_TH = '30 ก.ย. 2569';
+var BD_VERSION = '1.2569', BD_BUILD = '2569-10-01.1', BD_BUILD_TH = '1 ต.ค. 2569';
 /* BRAND (ชื่อระบบ โลโก้ สี ประกาศ): อ่านค่าที่แคชไว้ในเครื่องก่อน แล้วขอค่าล่าสุดจาก backend ตอนเริ่มแอป (ดู init ใน help.js) */
 var BRAND = (function(){ try { return JSON.parse(localStorage.getItem('bd_brand') || 'null'); } catch (e) { return null; } })();
 /* ================= แกนหลัก ================= */
@@ -37,9 +37,11 @@ function brChip(id){ var b = brOf(id); return '<span class="bchip" style="--bc:'
 function posShort(name){ return String(name || '').replace(/ ศ\..*$/, ''); }
 function flagText(f){ var x = (S.boot.flags || {})[f]; return x ? x.text : f; }
 function flagLevel(f){ var x = (S.boot.flags || {})[f]; return x ? x.level : 'O'; }
-function flagChips(list, max){
+var STOP_FLAGS = { RESIGNED: 1, LEAVER: 1, LEFT_NODATE: 1 };
+/** note = ข้อความอธิบายสถานะพ้นสภาพ (stopNote) แสดงใน tooltip ของธงพ้นสภาพ */
+function flagChips(list, max, note){
   list = (list || []).filter(function(f){ return f && f !== 'LEGACY'; });
-  var h = list.slice(0, max || 6).map(function(f){ return '<span class="fchip ' + (flagLevel(f) === 'R' ? 'fr' : 'fo') + '" title="' + esc(flagText(f)) + '">' + esc(flagText(f)) + '</span>'; }).join('');
+  var h = list.slice(0, max || 6).map(function(f){ var t = flagText(f) + (note && STOP_FLAGS[f] ? ' · ' + note : ''); return '<span class="fchip ' + (flagLevel(f) === 'R' ? 'fr' : 'fo') + '" title="' + esc(t) + '">' + esc(flagText(f)) + '</span>'; }).join('');
   return h + (list.length > (max || 6) ? '<span class="fchip fo">+' + (list.length - (max || 6)) + '</span>' : '');
 }
 function hrs(n){ n = Math.round((+n || 0) * 100) / 100; return n % 1 === 0 ? fmt(n, 0) : fmt(n, 2).replace(/0$/, ''); }

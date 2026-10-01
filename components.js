@@ -267,7 +267,7 @@ function vwApply(){ var im = $('vwImg'); if (!im) return; var v = window._vw; im
  * ขอเลขอ้างอิงจากเซิร์ฟเวอร์ (บันทึกลงประวัติการใช้งาน) แล้วเปิดหน้าต่างพิมพ์ของเบราว์เซอร์
  */
 function printReport(o){
-  return api('logPrint', { title: o.title, filters: o.filters, count: o.count || 0, kind: o.kind || '' }, { block: 'กำลังเตรียมเอกสารสำหรับพิมพ์…' }).then(function(m){
+  return api('logPrint', { title: o.title, filters: o.filters, count: o.count || 0, kind: o.kind || '' }, { block: 'กำลังเตรียมเอกสารสำหรับพิมพ์…' }).then(function(m){ return uiIdle().then(function(){ return m; }); }).then(function(m){
     var b = BRAND || {};
     var root = $('printRoot');
     root.className = o.portrait ? 'portrait' : 'landscape';
@@ -282,7 +282,7 @@ function printReport(o){
       '<div class="pr-end">— สิ้นสุดรายงาน · จำนวน ' + fmt(o.count || 0) + ' รายการ —</div>' +
       '<div class="pr-foot">พิมพ์โดย ' + esc(m.printedBy) + ' เมื่อ ' + esc(m.printedAt) + ' · เลขอ้างอิง ' + esc(m.ref) + ' · ' + esc(m.system) + '</div></div>';
     document.body.classList.add('printing');
-    var done = function(){ document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); };
+    var done = function(){ document.body.classList.remove('printing'); window.removeEventListener('afterprint', done); setTimeout(uiCleanup, 50); };
     window.addEventListener('afterprint', done);
     setTimeout(function(){ try { window.print(); } catch (e) { alertBox('เปิดหน้าต่างพิมพ์ไม่ได้', 'กรุณากด Ctrl+P (หรือ ⌘+P) เพื่อพิมพ์', 'info'); } setTimeout(done, 1500); }, 250);
     return m;
@@ -296,9 +296,39 @@ function ensureDocFont(){
   var p = (document.fonts && document.fonts.load) ? Promise.all([document.fonts.load('400 14px Sarabun'), document.fonts.load('700 14px Sarabun')]).catch(function(){}) : Promise.resolve();
   return Promise.race([p, new Promise(function(r){ setTimeout(r, 2500); })]);
 }
+/* 1 ต.ค. 69 แก้บั๊ก: พิมพ์แล้วกดปุ่มอะไรไม่ได้
+ * สาเหตุ: หน้าต่าง "กำลังเตรียมเอกสาร…" (SweetAlert) / หน้าต่างเลือกตำแหน่ง (Bootstrap) กำลังปิดอยู่ตอนเริ่มพิมพ์
+ * ระหว่างพิมพ์ระบบซ่อนทุกอย่างยกเว้นเอกสาร → อะนิเมชันปิดไม่จบ → ชั้นโปร่งใสค้างทับหน้าจอ
+ * แก้: รอให้หน้าต่างปิดสนิทก่อนพิมพ์ + เก็บกวาดชั้นที่ค้างหลังพิมพ์ */
+function uiCleanup(){
+  try {
+    if (window.Swal && !Swal.isVisible()) {
+      $$('.swal2-container').forEach(function(x){ x.remove(); });
+      [document.body, document.documentElement].forEach(function(el){ el.classList.remove('swal2-shown', 'swal2-height-auto', 'swal2-no-backdrop', 'swal2-toast-shown'); });
+      document.body.style.paddingRight = '';
+    }
+    if (!document.querySelector('.modal.show')) {
+      $$('.modal-backdrop').forEach(function(x){ x.remove(); });
+      $$('.modal').forEach(function(m){ m.style.display = 'none'; m.setAttribute('aria-hidden', 'true'); m.classList.remove('show'); });
+      document.body.classList.remove('modal-open'); document.body.style.overflow = ''; document.body.style.paddingRight = '';
+    }
+  } catch (e) { }
+}
+function uiIdle(){
+  try { if (window.Swal && Swal.isVisible() && Swal.isLoading()) Swal.close(); } catch (e) { }   // หน้าต่าง "กำลังเตรียม…"
+  try { if (window.MDL && document.querySelector('.modal.show')) MDL.hide(); } catch (e) { }
+  try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch (e) { }
+  return new Promise(function(res){
+    var t0 = Date.now();
+    (function chk(){
+      var busy = (window.Swal && Swal.isVisible() && Swal.isLoading()) || document.querySelector('.swal2-backdrop-hide, .modal.show, .modal-backdrop');
+      if (!busy || Date.now() - t0 > 1500) { uiCleanup(); res(); } else setTimeout(chk, 40);
+    })();
+  });
+}
 /** o: {orient:'landscape'|'portrait', pages:[html], title} */
 function printDoc(o){
-  return ensureDocFont().then(function(){
+  return Promise.all([ensureDocFont(), uiIdle()]).then(function(){
     var root = $('printRoot');
     root.className = 'docs ' + o.orient + ' measuring';
     $('printPage').textContent = '@page{size:A4 ' + o.orient + ';margin:8mm}';
@@ -318,7 +348,7 @@ function printDoc(o){
     root.classList.remove('measuring');
     var t0 = document.title; if (o.title) document.title = o.title;   // ชื่อไฟล์ตั้งต้นเมื่อเลือก "บันทึกเป็น PDF"
     document.body.classList.add('printing');
-    var done = function(){ document.body.classList.remove('printing'); document.title = t0; window.removeEventListener('afterprint', done); };
+    var done = function(){ document.body.classList.remove('printing'); document.title = t0; window.removeEventListener('afterprint', done); setTimeout(uiCleanup, 50); };
     window.addEventListener('afterprint', done);
     setTimeout(function(){ try { window.print(); } catch (e) { alertBox('เปิดหน้าต่างพิมพ์ไม่ได้', 'กรุณากด Ctrl+P (หรือ ⌘+P) เพื่อพิมพ์', 'info'); } setTimeout(done, 1500); }, 150);
   });
@@ -450,6 +480,175 @@ function printBRDoc(r){
   return printDoc({ orient: r.orient, title: r.title, pages: pages, flow: r.kind === 'summary' });
 }
 
+/* ================= 1 ต.ค. 69 Excel เอกสารเบิกจ่าย (ผู้ดูแลระบบ) สร้างในเครื่อง =================
+ * เดิมเซิร์ฟเวอร์สร้าง Google Sheet ชั่วคราว → แปลง .xlsx → ส่งกลับ (ช้า 10–40 วิ/ไฟล์)
+ * ใหม่: ใช้ข้อมูลชุดเดียวกับหน้าพิมพ์ (printDoc) จัดหน้าในเครื่อง แล้วแปลงตาราง/หัวเรื่อง/ช่องลงนามเป็นเซลล์ Excel
+ *       (ตัวหนา ขนาดอักษร สีพื้น เส้นขอบ ผสานเซลล์ ความกว้างคอลัมน์ ตั้งหน้า A4 พอดี 1 หน้า) → ดาวน์โหลดลงเครื่องทันที */
+/** sheets: [{name, cols:[px], rows:[{h, cells:[{v, s}|null]}], merges:[[r0,c0,r1,c1]], orient, flow}] */
+function xlsxStyledBlob(sheets){
+  var fonts = ['<font><sz val="10"/><name val="Tahoma"/></font>'], fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'];
+  var borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>'], xfs = ['<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'];
+  var K = { f: {}, l: {}, b: {}, x: {} };
+  var put = function(arr, map, key, xml){ if (map[key] === undefined) { map[key] = arr.length; arr.push(xml); } return map[key]; };
+  var side = function(n, w){ return w ? '<' + n + ' style="' + w + '"><color auto="1"/></' + n + '>' : '<' + n + '/>'; };
+  var sid = function(s){
+    if (!s) return 0;
+    var fk = (s.b ? 'b' : '') + (s.i ? 'i' : '') + '|' + (s.sz || 10) + '|' + (s.color || '');
+    var f = put(fonts, K.f, fk, '<font>' + (s.b ? '<b/>' : '') + (s.i ? '<i/>' : '') + '<sz val="' + (s.sz || 10) + '"/>' + (s.color ? '<color rgb="FF' + s.color + '"/>' : '') + '<name val="Tahoma"/></font>');
+    var l = s.fill ? put(fills, K.l, s.fill, '<fill><patternFill patternType="solid"><fgColor rgb="FF' + s.fill + '"/><bgColor indexed="64"/></patternFill></fill>') : 0;
+    var bd = s.bd || ['', '', '', ''], bk = bd.join('|');
+    var b = bk === '|||' ? 0 : put(borders, K.b, bk, '<border>' + side('left', bd[0]) + side('right', bd[1]) + side('top', bd[2]) + side('bottom', bd[3]) + '<diagonal/></border>');
+    var al = '<alignment horizontal="' + (s.h || 'general') + '" vertical="' + (s.v || 'center') + '"' + (s.wrap ? ' wrapText="1"' : '') + '/>';
+    var nf = s.nf || 0, xk = f + '|' + l + '|' + b + '|' + nf + '|' + al;
+    return put(xfs, K.x, xk, '<xf numFmtId="' + nf + '" fontId="' + f + '" fillId="' + l + '" borderId="' + b + '" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"' + (nf ? ' applyNumberFormat="1"' : '') + '>' + al + '</xf>');
+  };
+  var sheetXml = function(sh){
+    var x = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+      '<sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><sheetViews><sheetView workbookViewId="0" showGridLines="0"/></sheetViews><sheetFormatPr defaultRowHeight="15"/><cols>' +
+      sh.cols.map(function(px, i){ return '<col min="' + (i + 1) + '" max="' + (i + 1) + '" width="' + Math.max(2, px / 7).toFixed(2) + '" customWidth="1"/>'; }).join('') + '</cols><sheetData>';
+    sh.rows.forEach(function(r, ri){
+      x += '<row r="' + (ri + 1) + '"' + (r.h ? ' ht="' + r.h.toFixed(1) + '" customHeight="1"' : '') + '>';
+      r.cells.forEach(function(c, ci){
+        if (!c) return;
+        var ref = colName(ci) + (ri + 1), s = sid(c.s);
+        if (c.v === '' || c.v == null) x += '<c r="' + ref + '" s="' + s + '"/>';
+        else if (typeof c.v === 'number') x += '<c r="' + ref + '" s="' + s + '"><v>' + c.v + '</v></c>';
+        else x += '<c r="' + ref + '" s="' + s + '" t="inlineStr"><is><t xml:space="preserve">' + xmlEsc(c.v) + '</t></is></c>';
+      });
+      x += '</row>';
+    });
+    x += '</sheetData>';
+    if (sh.merges.length) x += '<mergeCells count="' + sh.merges.length + '">' + sh.merges.map(function(m){ return '<mergeCell ref="' + colName(m[1]) + (m[0] + 1) + ':' + colName(m[3]) + (m[2] + 1) + '"/>'; }).join('') + '</mergeCells>';
+    return x + '<printOptions horizontalCentered="1"/><pageMargins left="0.3" right="0.3" top="0.35" bottom="0.35" header="0.2" footer="0.2"/><pageSetup paperSize="9" orientation="' + (sh.orient || 'landscape') + '" fitToWidth="1" fitToHeight="' + (sh.flow ? 0 : 1) + '"/></worksheet>';
+  };
+  var used = {}, names = sheets.map(function(s, i){
+    var n = String(s.name || ('Sheet' + (i + 1))).replace(/[\[\]\*\?\/\\:]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 31) || ('Sheet' + (i + 1)), b = n, k = 2;
+    while (used[n.toLowerCase()]) { var t = ' (' + (k++) + ')'; n = b.slice(0, 31 - t.length) + t; }
+    used[n.toLowerCase()] = 1; return n;
+  });
+  var bodies = sheets.map(sheetXml);   // สร้างก่อน styles (สไตล์เก็บระหว่างสร้าง)
+  var files = [
+    { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+      sheets.map(function(s, i){ return '<Override PartName="/xl/worksheets/sheet' + (i + 1) + '.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'; }).join('') + '</Types>' },
+    { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+    { name: 'xl/workbook.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>' +
+      names.map(function(n, i){ return '<sheet name="' + xmlEsc(n) + '" sheetId="' + (i + 1) + '" r:id="rId' + (i + 1) + '"/>'; }).join('') + '</sheets></workbook>' },
+    { name: 'xl/_rels/workbook.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      sheets.map(function(s, i){ return '<Relationship Id="rId' + (i + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet' + (i + 1) + '.xml"/>'; }).join('') +
+      '<Relationship Id="rId' + (sheets.length + 1) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>' },
+    { name: 'xl/styles.xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><fonts count="' + fonts.length + '">' + fonts.join('') + '</fonts><fills count="' + fills.length + '">' + fills.join('') + '</fills><borders count="' + borders.length + '">' + borders.join('') + '</borders>' +
+      '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="' + xfs.length + '">' + xfs.join('') + '</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>' }
+  ];
+  bodies.forEach(function(b, i){ files.push({ name: 'xl/worksheets/sheet' + (i + 1) + '.xml', data: b }); });
+  return zipBlob(files, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+}
+/** หน้าเอกสาร (DOM ที่จัดแล้ว) → แผ่นงาน Excel · ตารางหลักกำหนดคอลัมน์ ข้อความอื่นผสานเต็มความกว้าง ช่องลงนามแบ่งซ้าย/ขวาตามตำแหน่งจริง */
+function domToSheet(page, name, orient, flow){
+  var tbl = page.querySelector('table'), cols = [];
+  if (tbl) { $$('col', tbl).forEach(function(c){ cols.push(c.getBoundingClientRect().width || parseFloat(c.style.width) || 60); }); }
+  if (!cols.length) cols = [120, 120, 120, 120, 120, 120];
+  var N = cols.length, rows = [], merges = [];
+  var tL = tbl ? tbl.getBoundingClientRect().left : page.getBoundingClientRect().left, edges = [0];
+  cols.forEach(function(w){ edges.push(edges[edges.length - 1] + w); });
+  var rgbHex = function(v){ var m = String(v).match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?/); if (!m || (m[4] !== undefined && +m[4] < 0.05)) return ''; var h = [m[1], m[2], m[3]].map(function(x){ return ('0' + (+x).toString(16)).slice(-2); }).join('').toUpperCase(); return h; };
+  var txt = function(el){ return String(el.textContent || '').replace(/\s+/g, ' ').trim(); };
+  var st = function(el, cell){
+    var cs = getComputedStyle(el), s = { sz: Math.round(parseFloat(cs.fontSize) * 0.75 * 2) / 2 || 10, b: (+cs.fontWeight || 400) >= 600, i: cs.fontStyle === 'italic' };
+    var c = rgbHex(cs.color); if (c && c !== '000000') s.color = c;
+    var ta = cs.textAlign; s.h = ta === 'center' ? 'center' : ta === 'right' || ta === 'end' ? 'right' : 'left';
+    if (cell) {
+      var bg = rgbHex(cs.backgroundColor); if (bg && bg !== 'FFFFFF') s.fill = bg;
+      s.bd = ['Left', 'Right', 'Top', 'Bottom'].map(function(k){ var w = parseFloat(cs['border' + k + 'Width']) || 0; return cs['border' + k + 'Style'] === 'none' || !w ? '' : w >= 1.75 ? 'medium' : 'thin'; });
+      s.wrap = cs.whiteSpace !== 'nowrap';
+    }
+    return s;
+  };
+  var row = function(h){ rows.push({ h: h, cells: new Array(N).fill(null) }); return rows.length - 1; };
+  var val = function(t, inBody){
+    if (inBody && /^-?(\d{1,3}(,\d{3})+|\d{1,4})(\.\d+)?$/.test(t)) { var n = +t.replace(/,/g, ''); return { v: n, nf: /,|\.\d\d$/.test(t) ? (/\.\d+$/.test(t) ? 4 : 3) : 0 }; }
+    return { v: t, nf: 0 };
+  };
+  var colRange = function(rc){   // ตำแหน่งจริงบนหน้า → ช่วงคอลัมน์
+    var a = rc.left - tL, b = rc.right - tL, c0 = 0, c1 = N - 1;
+    for (var i = 0; i < N; i++) if (edges[i + 1] > a + 2) { c0 = i; break; }
+    for (var j = N - 1; j >= 0; j--) if (edges[j] < b - 2) { c1 = j; break; }
+    return [Math.max(0, Math.min(c0, N - 1)), Math.max(c0, Math.min(c1, N - 1))];
+  };
+  var line = function(el, text, c0, c1, r){
+    var s = st(el, false), h = Math.max(15, el.getBoundingClientRect().height * 0.75);
+    if (r === undefined) r = row(Math.min(h, 40));
+    rows[r].cells[c0] = { v: text, s: s };
+    for (var k = c0 + 1; k <= c1; k++) rows[r].cells[k] = { v: '', s: s };
+    if (c1 > c0) merges.push([r, c0, r, c1]);
+    return r;
+  };
+  var addTable = function(t){
+    var occ = {}, base = rows.length;
+    $$('tr', t).forEach(function(tr, ri){
+      var r = base + ri; if (r >= rows.length) row(Math.max(12, tr.getBoundingClientRect().height * 0.75));
+      var inBody = tr.parentNode.tagName === 'TBODY', ci = 0;
+      Array.prototype.forEach.call(tr.cells, function(td){
+        while (occ[r + ':' + ci]) ci++;
+        if (ci >= N) return;
+        var cs = td.colSpan || 1, rs = td.rowSpan || 1, s = st(td, true), v = val(txt(td), inBody && td.tagName === 'TD');
+        s.nf = v.nf;
+        for (var a = 0; a < rs; a++) for (var b = 0; b < cs; b++) {
+          var rr = r + a, cc = ci + b; if (cc >= N) continue;
+          occ[rr + ':' + cc] = 1;
+          while (rr >= rows.length) row(15);
+          rows[rr].cells[cc] = a || b ? { v: '', s: s } : { v: v.v, s: s };
+        }
+        if (cs > 1 || rs > 1) merges.push([r, ci, r + rs - 1, Math.min(N - 1, ci + cs - 1)]);
+        ci += cs;
+      });
+    });
+  };
+  var walk = function(el){
+    Array.prototype.forEach.call(el.children, function(ch){
+      if (ch.tagName === 'TABLE') return addTable(ch);
+      if (ch.tagName === 'COLGROUP' || ch.tagName === 'STYLE') return;
+      var cs = getComputedStyle(ch);
+      if (cs.display === 'none') return;
+      if (ch.querySelector('table')) return walk(ch);
+      if (cs.display === 'flex' && cs.flexDirection.indexOf('column') < 0 && ch.children.length > 1) {   // ช่องลงนาม / ท้ายกระดาษ ซ้าย-ขวา
+        var parts = Array.prototype.map.call(ch.children, function(k){ var lines = k.children.length ? Array.prototype.slice.call(k.children) : [k]; return { el: k, rg: colRange(k.getBoundingClientRect()), lines: lines }; })
+          .filter(function(p){ return txt(p.el) || p.lines.length > 1; });
+        parts.forEach(function(p, i){ if (i && p.rg[0] <= parts[i - 1].rg[1]) p.rg[0] = Math.min(N - 1, parts[i - 1].rg[1] + 1); if (p.rg[1] < p.rg[0]) p.rg[1] = p.rg[0]; });
+        var n = Math.max.apply(null, parts.map(function(p){ return p.lines.length; }).concat([0])), r0 = rows.length;
+        for (var i = 0; i < n; i++) row(16);
+        parts.forEach(function(p){ p.lines.forEach(function(l, li){ line(l, txt(l), p.rg[0], p.rg[1], r0 + li); }); });
+        return;
+      }
+      var t = txt(ch);
+      if (t) line(ch, t, 0, N - 1);
+      else if (ch.getBoundingClientRect().height >= 8) row(Math.min(30, ch.getBoundingClientRect().height * 0.75));
+    });
+  };
+  walk(page);
+  return { name: name, cols: cols, rows: rows, merges: merges, orient: orient, flow: flow };
+}
+/** r = ผลจาก printDoc → ไฟล์ .xlsx (1 หน้าเอกสาร = 1 แผ่นงาน) ดาวน์โหลดลงเครื่อง */
+function xlsxBRDoc(r){
+  var pages = r.kind === 'sign32' ? r.pages.map(function(pg){ return docSign32Html(pg, r.foot); })
+    : r.kind === 'summary' ? r.pages.map(function(pg){ return docSummaryHtml(pg, r.foot); })
+    : r.pages.map(function(m, i){ return docGridHtml(m, r.foot, i + 1, r.pages.length); });
+  var names = r.pages.map(function(pg, i){
+    if (r.kind === 'sign32') return String(pg.t2 || '').replace(/^.*ตำแหน่ง\s*/, '').replace(/\s+ใบที่\s*(\d+).*$/, ' ใบ $1') || ('ใบ ' + (i + 1));
+    if (r.kind === 'summary') return 'สรุปยอด';
+    return String((pg.lines || [])[0] || pg.head || '').replace(/^ตำแหน่ง\s*/, '').replace(/^รหัสรายได้\s*/, '') || ('หน้า ' + (i + 1));
+  });
+  return ensureDocFont().then(function(){
+    var root = $('printRoot'), keep = root.innerHTML, cls = root.className;
+    root.className = 'docs ' + r.orient + ' measuring';
+    root.innerHTML = pages.map(function(h){ return '<section class="dp' + (r.kind === 'summary' ? ' flow' : '') + '"><div class="dp-in">' + h + '</div></section>'; }).join('');
+    var sheets;
+    try { sheets = $$('.dp-in', root).map(function(inn, i){ return domToSheet(inn.firstElementChild || inn, names[i], r.orient, r.kind === 'summary'); }); }
+    finally { root.innerHTML = keep; root.className = cls; }
+    downloadBlobs([{ name: (r.title || 'เอกสาร') + '.xlsx', blob: xlsxStyledBlob(sheets) }]);
+    return { sheets: sheets.length };
+  });
+}
+
 /** ตารางสำหรับรายงานพิมพ์ */
 function prTable(cols, rows, groupBy){
   var h = '<table class="pr-table"><thead><tr>' + cols.map(function(c){ return '<th' + (c.w ? ' style="width:' + c.w + '"' : '') + (c.num ? ' class="num"' : '') + '>' + esc(c.t) + '</th>'; }).join('') + '</tr></thead><tbody>';
@@ -505,7 +704,7 @@ function SheetGrid(cfg){
       h += '<tr class="sg-g"><td class="sg-code"></td><td class="sg-name" colspan="2"><b>' + esc(posShort(P.name)) + '</b>' + (cfg.onAddRow && cfg.canAdd ? ' <button class="btn btn-sm btn-link py-0" type="button" data-addp="' + g + '"><i class="bi bi-person-plus"></i> เพิ่มบุคลากร</button>' : '') + '</td><td colspan="' + (dates.length + 1) + '" class="sg-tlg">' + (P.day || P.eve ? timeLegend(P) : '') + '</td></tr>';
       idx.forEach(function(i){
         var r = cfg.rows[i];
-        h += '<tr data-row="' + i + '"><td class="sg-code tnum">' + esc(r.empCode) + '</td><td class="sg-name"><b>' + esc(r.name) + '</b>' + (r.partTime ? ' <span class="mini-tag">ชม.</span>' : '') + '</td><td class="sg-hp">' + esc(r.hrPos || '') + '</td>';
+        h += '<tr data-row="' + i + '"><td class="sg-code tnum">' + esc(r.empCode) + '</td><td class="sg-name"><b>' + esc(r.name) + '</b>' + (r.partTime ? ' <span class="mini-tag">ชม.</span>' : '') + (r.stopNote ? stopPill(r.stop, !r.stop || r.stop <= todayIso()) : '') + '</td><td class="sg-hp">' + esc(r.hrPos || '') + '</td>';
         dates.forEach(function(x){
           var v = r.cells[x.d] || '', pend = r.pend && r.pend[x.d], st = r.st && r.st[x.d], rc = v ? recCls(st) : '';
           h += '<td class="' + dk(x.color) + (pend ? ' sg-pend' : '') + (rc ? ' ' + rc : '') + '"' + (v ? ' title="' + esc((pend ? 'ลงเอง รอศูนย์ยืนยัน · ' : '') + recTitle(st)) + '"' : '') + '>' + (r.editable && x.color !== 'CLOSED' ? '<input class="sgc" data-r="' + i + '" data-d="' + x.d + '" value="' + esc(v) + '" autocomplete="off" spellcheck="false" aria-label="' + esc(r.name + ' วันที่ ' + x.d) + '">' : '<span class="sgv">' + esc(v) + '</span>') + '</td>';
@@ -600,6 +799,14 @@ function SheetGrid(cfg){
 
 /* ================= ช่องค้นหาบุคลากร (พิมพ์รหัสหรือชื่อ) ================= */
 var PEOPLE = null;
+/** 1 ต.ค. 69 · ป้ายพ้นสภาพ: ds = วันพ้นสภาพของ HR (วันแรกที่ไม่ได้ทำงาน) · x = พ้นสภาพแล้ว */
+function todayIso(){ var d = new Date(Date.now() + 7 * 3600000); return d.toISOString().slice(0, 10); }   // วันนี้ (เวลาไทย)
+function dayBefore(ymd){ var p = String(ymd).split('-'), d = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2] - 1)); return d.toISOString().slice(0, 10); }
+function stopPill(ds, x){
+  if (!ds && !x) return '';
+  var t = ds ? (x ? 'พ้นสภาพ ' : 'แจ้งพ้นสภาพ ') + thDate(ds) : 'พ้นสภาพ';
+  return ' <span class="pill p-warn nodot stop-pill" title="' + esc(ds ? 'HR: พ้นสภาพตั้งแต่ ' + thDate(ds) + ' · ทำงานวันสุดท้าย ' + thDate(dayBefore(ds)) : 'HR แจ้งพ้นสภาพ/ไม่พบรหัส · ไม่ระบุวันที่') + '">' + esc(t) + '</span>';
+}
 function loadPeople(){ if (PEOPLE) return Promise.resolve(PEOPLE); return api('listPeople', {}, { quiet: true }).then(function(r){ PEOPLE = r; return r; }); }
 /** เลือกบุคลากร 1 คน · jobId = แสดงคนที่ตรงงานก่อน */
 function pickPerson(title, jobId, sub){
@@ -611,8 +818,8 @@ function pickPerson(title, jobId, sub){
       var draw = function(){
         var q = inp.value.trim().toLowerCase();
         var f = list.filter(function(p){ return !q || p.c.indexOf(q) >= 0 || p.n.toLowerCase().indexOf(q) >= 0; });
-        if (jobId) f.sort(function(a, b){ return (b.j.indexOf(jobId) >= 0) - (a.j.indexOf(jobId) >= 0); });
-        L.innerHTML = f.slice(0, 40).map(function(p){ return '<button type="button" class="pp-i" data-c="' + p.c + '"><b class="tnum">' + p.c + '</b> ' + esc(p.n) + '<small>' + esc(p.h) + (p.pt ? ' · จ่ายรายชั่วโมง' : '') + (jobId && p.j.indexOf(jobId) >= 0 ? ' · ตรงตำแหน่ง' : '') + '</small></button>'; }).join('') || '<div class="small-muted p-2">ไม่พบรายชื่อ (บุคลากรใหม่ ให้เจ้าหน้าที่กลางเพิ่มที่หน้า "ข้อมูลบุคลากร")</div>';
+        if (jobId) f.sort(function(a, b){ return ((a.x || 0) - (b.x || 0)) || ((b.j.indexOf(jobId) >= 0) - (a.j.indexOf(jobId) >= 0)); });
+        L.innerHTML = f.slice(0, 40).map(function(p){ return '<button type="button" class="pp-i' + (p.x ? ' pp-x' : '') + '" data-c="' + p.c + '"><b class="tnum">' + p.c + '</b> ' + esc(p.n) + stopPill(p.ds, p.x) + '<small>' + esc(p.h) + (p.pt ? ' · จ่ายรายชั่วโมง' : '') + (jobId && p.j.indexOf(jobId) >= 0 ? ' · ตรงตำแหน่ง' : '') + (p.ds ? ' · ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(p.ds))) + ' (ลงเวรได้ถึงวันนั้น ระบบติดธงให้ตรวจ)' : p.x ? ' · ไม่ระบุวันพ้นสภาพ (ลงเวรได้ ระบบติดธงให้ตรวจ)' : '') + '</small></button>'; }).join('') || '<div class="small-muted p-2">ไม่พบรายชื่อ (บุคลากรใหม่ ให้เจ้าหน้าที่กลางเพิ่มที่หน้า "ข้อมูลบุคลากร")</div>';
         $$('.pp-i', L).forEach(function(b){ b.onclick = function(){ var p = list.filter(function(x){ return x.c === b.dataset.c; })[0]; MDL.hide(); resolve(p); }; });
       };
       inp.oninput = draw; draw(); setTimeout(function(){ inp.focus(); }, 250);

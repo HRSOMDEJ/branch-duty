@@ -71,7 +71,7 @@ function drawMy(r){
       var locked = r.periods[d.branchId] && ['VERIFIED', 'PROPOSED', 'SENT_HR', 'HR_CHECKED'].indexOf(r.periods[d.branchId]) >= 0;
       h += '<div class="dl-item' + (d.workStatus === 'ABSENT' ? ' off' : '') + '" style="--bc:' + esc(brOf(d.branchId).color) + '">' +
         '<div class="dl-main"><div class="dl-t">' + slotTag(d.slot) + ' <b>' + esc(d.timeIn + '–' + d.timeOut) + '</b> ' + brChip(d.branchId) + ' <span class="small-muted">' + esc(posShort(d.posName)) + ' · ใบที่ ' + d.lineNo + '</span></div>' +
-        '<div class="dl-s">' + st + ' ' + (d.scanStatus && d.date < today ? scanPill(d.scanStatus) : '') + (d.scanIn ? ' <span class="small-muted">สแกน ' + esc(d.scanIn) + (d.scanOut && d.scanOut !== d.scanIn ? '–' + esc(d.scanOut) : '') + '</span>' : '') + ' ' + flagChips(d.flags.filter(function(f){ return f !== 'NOT_CONFIRMED' && f !== 'PENDING_BOOK'; }), 3) + '</div></div>' +
+        '<div class="dl-s">' + st + ' ' + (d.scanStatus && d.date < today ? scanPill(d.scanStatus) : '') + (d.scanIn ? ' <span class="small-muted">สแกน ' + esc(d.scanIn) + (d.scanOut && d.scanOut !== d.scanIn ? '–' + esc(d.scanOut) : '') + '</span>' : '') + ' ' + flagChips(d.flags.filter(function(f){ return f !== 'NOT_CONFIRMED' && f !== 'PENDING_BOOK'; }), 3, d.stopNote) + '</div></div>' +
         '<div class="dl-pay">' + (d.payType === 'HOURLY' ? '<b>' + hrs(d.workStatus === 'WORKED' ? d.hours : d.planned) + '</b> ชม.<small>' + money(d.workStatus === 'WORKED' ? d.amount : d.planned * d.rate) + ' บาท</small>' : d.payType === 'FULLTIME' ? '<b>Full Time</b><small>' + (d.meal ? 'ค่าอาหาร ' + money(brOf(d.branchId).mealRate) : 'ในเวลาราชการ') + '</small>' : '<b>—</b><small>ไม่จ่ายรายชั่วโมง</small>') + '</div>' +
         '<div class="dl-act">' + d.attachIds.map(function(a, i){ return '<button class="btn btn-sm btn-ghost" onclick="viewAttach(\'' + a + '\',' + (locked ? 'null' : 'loadMyFresh') + ')"><i class="bi bi-paperclip"></i> ใบที่ ' + (i + 1) + '</button>'; }).join('') +
         (needDoc && !locked ? '<button class="btn btn-sm btn-soft" onclick="attachForm(\'' + d.id + '\',loadMyFresh)"><i class="bi bi-upload"></i> แนบใบลืมสแกน</button>' : '') +
@@ -237,7 +237,7 @@ function drawBranchBoard(d, prev){
     '<div class="card"><div class="card-h"><h3><i class="bi bi-person-exclamation"></i> ช่องเวรที่ยังว่าง (14 วัน)</h3><button class="btn btn-sm btn-soft ms-auto" onclick="go(\'plan\')">จัดตารางเวร</button></div><div class="card-b gap-list">' +
     (d.gaps.length ? d.gaps.map(function(g){ return '<div class="gp"><b>' + esc(thDate(g.date)) + '</b><span>' + esc(posShort(g.name)) + ' ' + slotTag(g.slot) + '</span><span class="pill p-warn nodot">ขาด ' + g.need + '</span></div>'; }).join('') : empty('check2-all', 'กรอบเวรครบทุกช่องแล้ว')) + '</div></div></div>';
   if (d.redItems.length) h += '<div class="card mt-3"><div class="card-h"><h3><i class="bi bi-exclamation-octagon text-danger"></i> รายการต้องแก้ไข</h3><button class="btn btn-sm btn-ghost ms-auto" onclick="go(\'followup\')">ดูทั้งหมด</button></div><div class="card-b">' +
-    d.redItems.slice(0, 12).map(function(x){ return '<div class="td-row"><span class="td-t">' + esc(thDate(x.date)) + '</span><b>' + esc(x.name) + '</b>' + flagChips(x.flags.filter(function(f){ return flagLevel(f) === 'R'; }), 3) + '</div>'; }).join('') + '</div></div>';
+    d.redItems.slice(0, 12).map(function(x){ return '<div class="td-row"><span class="td-t">' + esc(thDate(x.date)) + '</span><b>' + esc(x.name) + '</b>' + flagChips(x.flags.filter(function(f){ return flagLevel(f) === 'R'; }), 3, x.stopNote) + '</div>'; }).join('') + '</div></div>';
   $('dbBody').innerHTML = h;
   animateKpis();
 }
@@ -376,7 +376,7 @@ function sheetCell(x, day, s, inQuota, editable, P){
   return '<td class="sc sc-' + cls + (x._saving ? ' saving' : '') + '" data-cell="' + x.id + '"><div class="sc-n"><b>' + esc(x.name) + '</b><small class="tnum">' + esc(x.empCode) + (x.partTime ? ' · ชม.' : '') + '</small></div>' +
     '<div class="sc-m">' + (isStd(x, P) ? '' : '<span class="tag">' + esc(x.timeIn + '–' + x.timeOut) + '</span>') + (x.payType === 'HOURLY' ? '<span class="sc-h">' + hrs(x.workStatus === 'WORKED' ? x.hours : x.planned) + ' ชม.</span>' : x.payType === 'FULLTIME' ? '<span class="sc-h ft">FT' + (x.meal ? ' ☕' : '') + '</span>' : '') +
     (x.scanStatus && past ? '<span class="sc-scan ' + scanCls(x.scanStatus) + '" title="' + esc(x.scanStatus) + '"><i class="bi bi-fingerprint"></i>' + esc(x.scanOut || x.scanIn || '') + '</span>' : '') + (x.attachIds.length ? '<i class="bi bi-paperclip" title="มีใบลืมสแกน"></i>' : '') + '</div>' +
-    (x.flags.length ? '<div class="sc-f">' + flagChips(x.flags.filter(function(f){ return f !== 'NOT_CONFIRMED' && f !== 'LEGACY'; }), 2) + '</div>' : '') +
+    (x.flags.length ? '<div class="sc-f">' + flagChips(x.flags.filter(function(f){ return f !== 'NOT_CONFIRMED' && f !== 'LEGACY'; }), 2, x.stopNote) + '</div>' : '') +
     (editable && past && x.workStatus !== 'WORKED' ? '<button class="sc-cf" data-id="' + x.id + '" title="ตรงตามใบ"><i class="bi bi-check-lg"></i></button>' : x.workStatus === 'WORKED' ? '<i class="bi bi-check-circle-fill sc-done" title="ยืนยันแล้ว"></i>' : '') + '</td>';
 }
 function isStd(x, P){ var k = x.timeIn + '-' + x.timeOut; return (x.slot === 'D' ? P.day : P.eve).indexOf(k) >= 0; }
@@ -413,7 +413,8 @@ function openDuty(id){
     '<div><span>สแกนนิ้ว</span>' + scanPill(x.scanStatus) + (x.scanIn ? ' <small>' + esc(x.scanIn) + (x.scanOut && x.scanOut !== x.scanIn ? ' – ' + esc(x.scanOut) : '') + '</small>' : '') + '</div>' +
     '<div><span>กลุ่มการจ่าย</span>' + (x.partTime ? 'จ่ายรายชั่วโมงทุกช่วง' : 'บุคลากรประจำศูนย์') + (x.payMode ? ' <span class="tag">กำหนดรายเวร</span>' : '') + '</div>' +
     '<div><span>ที่มา</span>' + esc({ BOOK: 'ลงเอง', BRANCH: 'ผู้ดูแลศูนย์', CENTRAL: 'เจ้าหน้าที่กลาง', IMPORT: 'นำเข้าจากระบบเดิม', LEGACY: 'ระบบเดิม' }[x.source] || x.source) + '</div></div>' +
-    (x.flags.length ? '<div class="mt-2">' + flagChips(x.flags, 8) + '</div>' : '') +
+    (x.flags.length ? '<div class="mt-2">' + flagChips(x.flags, 8, x.stopNote) + '</div>' : '') +
+    (x.stopNote ? '<div class="dd-stop mt-2"><i class="bi bi-person-dash"></i> ' + esc(x.stopNote) + '</div>' : '') +
     (x.attachIds.length ? '<div class="mt-2">' + x.attachIds.map(function(a, i){ return '<button class="btn btn-sm btn-ghost me-1" onclick="viewAttach(\'' + a + '\',' + (ed ? 'function(){loadEntry()}' : 'null') + ')"><i class="bi bi-paperclip"></i> ใบลืมสแกน ' + (i + 1) + '</button>'; }).join('') + '</div>' : '');
   if (ed) {
     body += '<hr><div class="row g-2"><div class="col-sm-6"><label class="form-label" for="ddTime">เวลา</label><select class="form-select" id="ddTime">' + times.map(function(t){ return '<option' + (t === x.timeIn + '-' + x.timeOut ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '<option value="_">กำหนดเอง…</option></select></div>' +
@@ -465,7 +466,7 @@ function drawEntryList(){
       '<td class="text-nowrap">' + esc(thDate(x.date)) + ' <small class="small-muted">' + TH_D[dowOf(x.date)] + '</small></td><td>' + esc(posShort(x.posName)) + ' <span class="small-muted">ใบ ' + x.lineNo + '</span></td><td>' + slotTag(x.slot) + ' <small>' + esc(x.timeIn + '–' + x.timeOut) + '</small></td>' +
       '<td><div class="who"><b>' + esc(x.name) + '</b><small>' + esc(x.empCode) + (x.partTime ? ' · จ่ายรายชั่วโมง' : '') + '</small></div></td><td>' + (x.date <= d.today ? scanPill(x.scanStatus) : '') + '</td>' +
       '<td class="num">' + (x.payType === 'HOURLY' ? hrs(x.workStatus === 'WORKED' ? x.hours : x.planned) : x.payType === 'FULLTIME' ? 'FT' : '-') + '</td><td class="num">' + (x.amount ? money(x.amount) : '') + '</td>' +
-      '<td>' + (x.workStatus === 'WORKED' ? '<span class="pill p-ok">ยืนยันแล้ว</span>' : x.workStatus === 'ABSENT' ? '<span class="pill p-mute">ไม่มา</span>' : x.date <= d.today ? '<span class="pill p-slate">รอยืนยัน</span>' : '<span class="pill p-info">ตามตาราง</span>') + ' ' + flagChips(x.flags.filter(function(g){ return g !== 'NOT_CONFIRMED'; }), 2) + '</td></tr>';
+      '<td>' + (x.workStatus === 'WORKED' ? '<span class="pill p-ok">ยืนยันแล้ว</span>' : x.workStatus === 'ABSENT' ? '<span class="pill p-mute">ไม่มา</span>' : x.date <= d.today ? '<span class="pill p-slate">รอยืนยัน</span>' : '<span class="pill p-info">ตามตาราง</span>') + ' ' + flagChips(x.flags.filter(function(g){ return g !== 'NOT_CONFIRMED'; }), 2, x.stopNote) + '</td></tr>';
   });
   h += '</tbody></table></div>' + (items.length > 1500 ? '<div class="small-muted mt-1">แสดง 1,500 รายการแรก</div>' : '');
   $('enBody').innerHTML = items.length ? h : h + empty('check2-circle', 'ไม่มีรายการในกลุ่มนี้');
@@ -497,7 +498,7 @@ function drawFu(){
   var rows = r.rows.filter(function(x){ return !sel.length || x.hit.some(function(f){ return sel.indexOf(f) >= 0; }); });
   var h = '<div class="issue-chips mb-3">' + types.map(function(t){ return '<button class="ichip ' + (flagLevel(t) === 'R' ? 'r' : 'o') + (sel.indexOf(t) >= 0 ? ' on' : '') + '" data-t="' + t + '">' + esc(flagText(t)) + ' <b>' + r.counts[t] + '</b></button>'; }).join('') + '</div>';
   h += rows.length ? '<div class="tbl"><table class="table table-hover"><thead><tr><th>ศูนย์</th><th>วันที่</th><th>ตำแหน่ง</th><th>ช่วง</th><th>ผู้ปฏิบัติงาน</th><th>สแกน</th><th>ปัญหา</th></tr></thead><tbody>' +
-    rows.slice(0, 1500).map(function(x){ return '<tr><td>' + brDot(x.branchId) + '</td><td class="text-nowrap">' + esc(thDate(x.date)) + '</td><td>' + esc(posShort(x.posName)) + ' <small class="small-muted">ใบ ' + x.lineNo + '</small></td><td>' + slotTag(x.slot) + ' <small>' + esc(x.timeIn + '–' + x.timeOut) + '</small></td><td><div class="who"><b>' + esc(x.name) + '</b><small>' + esc(x.empCode) + '</small></div></td><td>' + scanPill(x.scanStatus) + (x.scanOut ? ' <small>' + esc(x.scanOut) + '</small>' : '') + '</td><td>' + flagChips(x.hit, 4) + '</td></tr>'; }).join('') + '</tbody></table></div>'
+    rows.slice(0, 1500).map(function(x){ return '<tr><td>' + brDot(x.branchId) + '</td><td class="text-nowrap">' + esc(thDate(x.date)) + '</td><td>' + esc(posShort(x.posName)) + ' <small class="small-muted">ใบ ' + x.lineNo + '</small></td><td>' + slotTag(x.slot) + ' <small>' + esc(x.timeIn + '–' + x.timeOut) + '</small></td><td><div class="who"><b>' + esc(x.name) + '</b><small>' + esc(x.empCode) + '</small></div></td><td>' + scanPill(x.scanStatus) + (x.scanOut ? ' <small>' + esc(x.scanOut) + '</small>' : '') + '</td><td>' + flagChips(x.hit, 4, x.stopNote) + '</td></tr>'; }).join('') + '</tbody></table></div>'
     : '<div class="card">' + empty('emoji-smile', 'ไม่พบปัญหาตามเงื่อนไขที่เลือก') + '</div>';
   $('fuBody').innerHTML = h;
   $$('#fuBody .ichip').forEach(function(b){ b.onclick = function(){ var t = b.dataset.t, i = S.fuTypes.indexOf(t); if (i >= 0) S.fuTypes.splice(i, 1); else S.fuTypes.push(t); drawFu(); }; });

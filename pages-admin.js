@@ -232,7 +232,7 @@ function sgSave(btn){
 var EM = { list: null };
 PAGES.employees = function(){
   mount(pageHead('การตั้งค่า', 'ข้อมูลบุคลากร', 'ซิงก์จากระบบ HR ทุกคืน · กำหนดกลุ่มการจ่าย (Part Time / ประจำ) ศูนย์ต้นสังกัด และงานที่ขึ้นเวรได้',
-    isCentral() ? '<button class="btn btn-ghost" onclick="syncEmp(this)"><i class="bi bi-arrow-repeat"></i> ซิงก์จาก HR</button><button class="btn btn-brand" onclick="addEmp()"><i class="bi bi-person-plus"></i> เพิ่มบุคลากร</button>' : '') +
+    isCentral() ? '<button class="btn btn-ghost" onclick="probeEmp()"><i class="bi bi-search"></i> ตรวจข้อมูลจาก HR</button><button class="btn btn-ghost" onclick="syncEmp(this)"><i class="bi bi-arrow-repeat"></i> ซิงก์จาก HR</button><button class="btn btn-brand" onclick="addEmp()"><i class="bi bi-person-plus"></i> เพิ่มบุคลากร</button>' : '') +
     '<div class="filters"><div class="flex-grow-1" style="min-width:220px"><label class="form-label" for="emQ">ค้นหา</label><input class="form-control" id="emQ" placeholder="รหัส ชื่อ ตำแหน่ง หน่วยงาน"></div>' +
     '<div><label class="form-label" for="emG">กลุ่มการจ่าย</label><select class="form-select" id="emG"><option value="">ทั้งหมด</option><option value="pt">Part Time (จ่ายทุกช่วง)</option><option value="ft">ประจำ (วันทำการเต็มเวลา)</option><option value="set">กำหนดเอง</option></select></div>' +
     '<div><label class="form-label" for="emB">ศูนย์ต้นสังกัด</label><select class="form-select" id="emB"><option value="">ทั้งหมด</option>' + S.boot.branches.map(function(b){ return '<option value="' + b.id + '">' + esc(b.name) + '</option>'; }).join('') + '<option value="-">ไม่ระบุ</option></select></div>' +
@@ -253,7 +253,7 @@ function drawEmp(){
   $('emBody').innerHTML = '<div class="small-muted mb-2">' + fmt(list.length) + ' จาก ' + fmt(EM.list.length) + ' คน</div><div class="card"><div class="card-b p-0"><div class="table-responsive"><table class="table tbl table-hover mb-0"><thead><tr><th>รหัส</th><th>ชื่อ-สกุล</th><th>ตำแหน่ง HR / หน่วยงาน</th><th>กลุ่มการจ่าย</th><th>ศูนย์ต้นสังกัด</th><th>งานที่ขึ้นเวร</th><th></th></tr></thead><tbody>' +
     list.slice(0, 400).map(function(e){
       var jobs = e.allowedJobs.concat(e.usedJobs.filter(function(j){ return e.allowedJobs.indexOf(j) < 0; }));
-      return '<tr class="' + (e.status !== 'ACTIVE' ? 'op50' : '') + '"><td class="tnum">' + esc(e.empCode) + '</td><td><b>' + esc(e.fullName) + '</b>' + (e.status !== 'ACTIVE' ? ' <span class="pill p-mute">พ้นสภาพ</span>' : '') + '</td>' +
+      return '<tr class="' + (e.status !== 'ACTIVE' ? 'op50' : '') + '"><td class="tnum">' + esc(e.empCode) + '</td><td><b>' + esc(e.fullName) + '</b>' + (e.status !== 'ACTIVE' || e.dateStop ? stopPill(e.dateStop, e.status !== 'ACTIVE') : '') + (e.dateStop ? '<div class="small-muted">ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(e.dateStop))) + '</div>' : '') + '</td>' +
         '<td class="small">' + esc(e.hrPosition) + '<div class="small-muted">' + esc(e.orgUnit || e.division) + '</div></td>' +
         '<td>' + (e.partTime ? '<span class="pill p-violet">Part Time</span>' : '<span class="pill p-slate">ประจำ</span>') + (e.partTimeSet ? '' : ' <span class="small-muted" title="กำหนดจากชื่อตำแหน่ง HR">อัตโนมัติ</span>') + '</td>' +
         '<td>' + (e.homeBranch ? brDot(e.homeBranch) : '<span class="small-muted">—</span>') + '</td>' +
@@ -282,7 +282,40 @@ function addEmp(){
         alertBox('เพิ่มบุคลากร', 'เพิ่มใหม่ ' + r.added.length + ' · ปรับปรุง ' + r.updated.length + (r.notFound.length ? '\nไม่พบในระบบ HR: ' + r.notFound.join(', ') : ''), r.notFound.length ? 'warning' : 'success'); go('employees'); }).catch(function(){});
       return false; } }]);
 }
-function syncEmp(btn){ api('syncEmployeesNow', {}, { btn: btn, block: 'กำลังซิงก์ข้อมูลจาก HR…', timeout: 300000 }).then(function(r){ notify('ซิงก์แล้ว ' + fmt(r.total || 0) + ' คน · มีการเปลี่ยนแปลง ' + fmt(r.changed || 0)); go('employees'); }).catch(function(){}); }
+/** 1 ต.ค. 69: ซิงก์แล้วแจ้งว่าเกิดอะไรขึ้น (ใครพ้นสภาพ/วันพ้นสภาพเปลี่ยน · HR ส่งฟิลด์อะไรมา) */
+function syncEmp(btn){
+  api('syncEmployeesNow', {}, { btn: btn, block: 'กำลังซิงก์ข้อมูลจาก HR…', timeout: 300000 }).then(function(r){
+    var ch = r.changes || [], st = function(s){ return s === 'ACTIVE' ? 'ปฏิบัติงาน' : s === 'INACTIVE' ? 'พ้นสภาพ' : (s || '—'); };
+    var a = r.apiActive || {};
+    var h = '<div class="small-muted mb-2">ซิงก์ ' + fmt(r.total || 0) + ' คน · ข้อมูลเปลี่ยน ' + fmt(r.changed || 0) + ' คน · พ้นสภาพในระบบ ' + fmt(r.inactive || 0) + ' คน · มีวันพ้นสภาพ ' + fmt(r.withStop || 0) + ' คน</div>' +
+      '<div class="small mb-2">สถานะที่ HR ส่งมา: ปฏิบัติงาน ' + fmt(a.yes || 0) + ' · พ้นสภาพ ' + fmt(a.no || 0) + ' · ไม่ระบุ ' + fmt(a.unknown || 0) + (r.notFound && r.notFound.length ? ' · <b>ไม่พบรหัสใน HR ' + r.notFound.length + '</b>' : '') + '</div>' +
+      (ch.length ? '<div class="sync-chg"><table class="table table-sm mb-2"><thead><tr><th>รหัส</th><th>ชื่อ</th><th>สถานะ</th><th>วันพ้นสภาพ (HR)</th></tr></thead><tbody>' + ch.map(function(c){
+        return '<tr><td class="tnum">' + esc(c.empCode) + '</td><td>' + esc(c.name || '') + '</td><td>' + esc(st(c.from)) + (c.from !== c.to ? ' → <b>' + esc(st(c.to)) + '</b>' : '') + (c.found ? '' : ' <span class="pill p-bad nodot">ไม่พบใน HR</span>') + '</td><td>' + (c.dateStop ? esc(thDate(c.dateStop)) + '<div class="small-muted">ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(c.dateStop))) + '</div>' : '—') + '</td></tr>'; }).join('') + '</tbody></table></div>' : '<div class="small mb-2">ไม่มีใครเปลี่ยนสถานะหรือวันพ้นสภาพ</div>') +
+      '<div class="small-muted">ฟิลด์ที่ HR ส่งมา: ' + esc((r.fields || []).join(', ') || '—') + '</div>' +
+      '<div class="small-muted mt-1">คนพ้นสภาพยังลงเวรได้ · เวรก่อนวันพ้นสภาพ = ธงส้ม (เบิกได้) · เวรตั้งแต่วันพ้นสภาพ = ธงแดง (ต้องแก้ก่อนปิดรอบ)</div>';
+    modal('ผลการซิงก์ข้อมูลจาก HR', h, null, 'lg');
+    if ($('emBody')) api('listEmployees', {}, { fresh: true, quiet: true }).then(function(l){ EM.list = l; drawEmp(); }).catch(function(){});
+  }).catch(function(){});
+}
+/** ตรวจข้อมูลดิบที่ HR (SmartAPI) ส่งมาของรหัสเดียว (ไม่แสดงฟิลด์ส่วนบุคคล) */
+function probeEmp(code){
+  modal('ตรวจข้อมูลจาก HR', '<div class="d-flex gap-2 mb-2"><input class="form-control" id="pbCode" placeholder="รหัสเจ้าหน้าที่" value="' + esc(code || '') + '"><button class="btn btn-brand text-nowrap" id="pbGo"><i class="bi bi-search"></i> ตรวจ</button></div><div id="pbOut" class="hr-probe small-muted">ดูว่า HR ส่งข้อมูลอะไรมา และระบบอ่านสถานะ/วันพ้นสภาพอย่างไร</div>');
+  var run = function(){
+    var c = $('pbCode').value.trim(); if (!c) return;
+    $('pbOut').innerHTML = skeleton(4);
+    api('probeEmp', { empCode: c }, { quiet: true }).then(function(r){
+      if (!r.found) { $('pbOut').innerHTML = '<div class="dd-stop">ไม่พบรหัส ' + esc(c) + ' ในข้อมูล HR (SmartAPI ไม่ส่งข้อมูลกลับ)</div>'; return; }
+      var R = r.read, S = r.stored, act = R.active === true ? 'ปฏิบัติงาน' : R.active === false ? 'พ้นสภาพ' : 'ไม่ระบุ';
+      var h = '<div class="mb-2"><b>' + esc(R.fullName) + '</b> · ' + esc(R.hrPosition) + '</div><table><tbody>' +
+        '<tr><td>ระบบอ่านได้ว่า</td><td>สถานะจาก HR: <b>' + act + '</b> · วันพ้นสภาพ: <b>' + (R.dateStop ? esc(thDate(R.dateStop)) + '</b> (ทำงานวันสุดท้าย ' + esc(thDate(dayBefore(R.dateStop))) + ')' : '—</b>') + ' → สถานะในระบบ <b>' + (r.statusNow === 'ACTIVE' ? 'ปฏิบัติงาน' : 'พ้นสภาพ') + '</b></td></tr>' +
+        '<tr><td>ที่เก็บในระบบตอนนี้</td><td>' + (S ? esc(S.status === 'ACTIVE' ? 'ปฏิบัติงาน' : 'พ้นสภาพ') + (S.dateStop ? ' · วันพ้นสภาพ ' + esc(thDate(S.dateStop)) : '') + ' <span class="small-muted">(ซิงก์ ' + esc(S.lastSync || '—') + ')</span>' : 'ยังไม่อยู่ในรายชื่อบุคลากรของระบบ') + '</td></tr>' +
+        Object.keys(r.fields).map(function(k){ return '<tr><td>' + esc(k) + '</td><td>' + esc(r.fields[k] === null ? 'null' : String(r.fields[k])) + '</td></tr>'; }).join('') + '</tbody></table>';
+      $('pbOut').innerHTML = h;
+    }).catch(function(e){ $('pbOut').innerHTML = '<div class="dd-stop">' + esc(e && (e.text || e.title || e.message) || 'ตรวจไม่สำเร็จ') + '</div>'; });
+  };
+  $('pbGo').onclick = run; $('pbCode').onkeydown = function(e){ if (e.key === 'Enter') run(); };
+  if (code) run(); else setTimeout(function(){ $('pbCode').focus(); }, 250);
+}
 
 /* ================= ผู้ใช้งานและสิทธิ์ ================= */
 var US = null;
